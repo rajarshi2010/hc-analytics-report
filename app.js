@@ -1,0 +1,710 @@
+
+const BLUE = '#1a3a5c';
+const BLUE_MID = '#2a5f8c';
+const BLUE_LIGHT = '#4a8ab5';
+const BLUE_PALE = '#85b7d9';
+const BLUE_FAINT = '#c5dced';
+const SLATE = '#3a4a5c';
+const STEEL = '#5a7a8c';
+const MUTED = '#8ca5b5';
+const WARN = '#c84b2f';
+const NEUTRAL = '#b4b2a9';
+const PALETTE = [BLUE, BLUE_MID, BLUE_LIGHT, SLATE, STEEL, BLUE_PALE, MUTED, '#2a4a6c','#1a4a6c','#3a6a8c'];
+const gridC = 'rgba(15,14,12,0.07)', tickC = '#7a7870';
+const baseChart = {
+  responsive: true, maintainAspectRatio: false,
+  plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0f0e0c', titleColor: '#f9f6f0', bodyColor: '#c8c5bb', padding: 10, cornerRadius: 4 } },
+  scales: {
+    x: { grid: { color: gridC }, ticks: { color: tickC, font: { size: 11, family: "'Segoe UI'" } } },
+    y: { grid: { color: gridC }, ticks: { color: tickC, font: { size: 11, family: "'Segoe UI'" } } }
+  }
+};
+
+// Country → Region classifier
+const CR = {
+  india:'Asia Pacific', pakistan:'Asia Pacific', bangladesh:'Asia Pacific', 'sri lanka':'Asia Pacific',
+  singapore:'Asia Pacific', malaysia:'Asia Pacific', indonesia:'Asia Pacific', philippines:'Asia Pacific',
+  thailand:'Asia Pacific', vietnam:'Asia Pacific', china:'Asia Pacific', japan:'Asia Pacific',
+  'south korea':'Asia Pacific', australia:'Asia Pacific', 'new zealand':'Asia Pacific', 'hong kong':'Asia Pacific',
+  taiwan:'Asia Pacific', myanmar:'Asia Pacific', cambodia:'Asia Pacific', laos:'Asia Pacific',
+  'united states':'North America', usa:'North America', us:'North America', canada:'North America', mexico:'North America',
+  'united kingdom':'Europe', uk:'Europe', england:'Europe', scotland:'Europe', wales:'Europe',
+  germany:'Europe', france:'Europe', netherlands:'Europe', spain:'Europe', italy:'Europe',
+  sweden:'Europe', norway:'Europe', denmark:'Europe', finland:'Europe', switzerland:'Europe',
+  belgium:'Europe', poland:'Europe', portugal:'Europe', austria:'Europe', ireland:'Europe',
+  czechia:'Europe', 'czech republic':'Europe', ukraine:'Europe', romania:'Europe', hungary:'Europe',
+  greece:'Europe', slovakia:'Europe', slovenia:'Europe', croatia:'Europe', bulgaria:'Europe',
+  serbia:'Europe', 'north macedonia':'Europe', albania:'Europe', estonia:'Europe', latvia:'Europe',
+  lithuania:'Europe', luxembourg:'Europe', malta:'Europe', iceland:'Europe', moldova:'Europe',
+  uae:'EMEA', 'united arab emirates':'EMEA', 'saudi arabia':'EMEA',
+  qatar:'EMEA', kuwait:'EMEA', bahrain:'EMEA',
+  oman:'EMEA', egypt:'EMEA', 'south africa':'EMEA',
+  nigeria:'EMEA', kenya:'EMEA', ghana:'EMEA',
+  israel:'EMEA', jordan:'EMEA', lebanon:'EMEA',
+  morocco:'EMEA', ethiopia:'EMEA', tanzania:'EMEA',
+  uganda:'EMEA', zimbabwe:'EMEA', zambia:'EMEA',
+  brazil:'Latin America', argentina:'Latin America', colombia:'Latin America', chile:'Latin America',
+  peru:'Latin America', venezuela:'Latin America', ecuador:'Latin America', bolivia:'Latin America',
+  paraguay:'Latin America', uruguay:'Latin America', 'costa rica':'Latin America', panama:'Latin America',
+};
+const c2r = c => CR[(c||'').toLowerCase().trim()] || 'Other';
+
+let charts = {};
+const dc = id => { if (charts[id]) { charts[id].destroy(); delete charts[id]; } };
+
+// Drag & drop
+const dz = document.getElementById('dropZone');
+const fi = document.getElementById('fileInput');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag-over'); if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]); });
+fi.addEventListener('change', e => { if (e.target.files[0]) processFile(e.target.files[0]); });
+
+function processFile(file) {
+  document.getElementById('upload-screen').style.display = 'none';
+  document.getElementById('loading').style.display = 'flex';
+  const isXlsx = /\.(xlsx|xls)$/i.test(file.name);
+  const r = new FileReader();
+  if (isXlsx) {
+    r.onload = e => setTimeout(() => {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      // Convert to array of arrays
+      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      // Find the real header row (first row with 5+ non-empty cells containing known keywords)
+      const HEADER_KEYWORDS = ['employee','gender','country','company','status','hire','salary','email','org','cost','segment','product','birth'];
+      let headerIdx = 0;
+      for (let i = 0; i < Math.min(10, aoa.length); i++) {
+        const cells = aoa[i].map(c => String(c||'').toLowerCase());
+        const nonEmpty = cells.filter(c=>c).length;
+        const matches = HEADER_KEYWORDS.filter(k => cells.some(c=>c.includes(k))).length;
+        if (nonEmpty >= 5 && matches >= 3) { headerIdx = i; break; }
+      }
+      const headers = aoa[headerIdx].map(h => String(h||'').trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''));
+      const rows = [];
+      for (let i = headerIdx + 1; i < aoa.length; i++) {
+        if (aoa[i].every(c => c === '' || c == null)) continue;
+        const row = {};
+        headers.forEach((h, j) => {
+          const val = aoa[i][j];
+          // Format dates from SheetJS as YYYY-MM-DD
+          if (val instanceof Date) {
+            row[h] = val.toISOString().slice(0,10);
+          } else {
+            row[h] = String(val == null ? '' : val).trim();
+          }
+        });
+        rows.push(row);
+      }
+      renderReport(processRows(rows, headers, file.name));
+    }, 800);
+    r.readAsArrayBuffer(file);
+  } else {
+    r.onload = e => setTimeout(() => renderReport(parseHC(e.target.result, file.name)), 800);
+    r.readAsText(file);
+  }
+}
+
+function parseHC(text, filename) {
+  const lines = text.trim().split(/\r?\n/);
+  const delim = lines[0].includes('\t') ? '\t' : ',';
+  const HEADER_KEYWORDS = ['employee','gender','country','company','status','hire','salary','email','org','cost','segment','product','birth'];
+  let headerLineIdx = 0;
+  for (let i = 0; i < Math.min(10, lines.length); i++) {
+    const cells = lines[i].split(delim).map(c => c.trim().toLowerCase());
+    const nonEmpty = cells.filter(c => c).length;
+    const matches = HEADER_KEYWORDS.filter(k => cells.some(c => c.includes(k))).length;
+    if (nonEmpty >= 5 && matches >= 3) { headerLineIdx = i; break; }
+  }
+  const headers = lines[headerLineIdx].split(delim).map(h => h.trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''));
+  const rows = [];
+  for (let i = headerLineIdx + 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const vals = lines[i].split(delim);
+    const row = {};
+    headers.forEach((h, j) => row[h] = (vals[j]||'').trim());
+    rows.push(row);
+  }
+  return processRows(rows, headers, filename);
+}
+
+function processRows(rows, headers, filename) {
+  const find = cs => cs.find(c => headers.includes(c)) || null;
+
+  const colCompany  = find(['company','legal_entity','entity','employer']);
+  const colCountry  = find(['country','location']);
+  const colOrg2     = find(['org_level_2_cost_center','org_level_2','cost_center','org_level2','l2','costcenter']);
+  const colOrg3     = find(['org_level_3_ops_segment','org_level_3','ops_segment','org_level3','l3','sub_department','department']);
+  const colOrg4     = find(['org_level_4_product','org_level_4','org_level4','l4','product','product_line']);
+  const colGender   = find(['gender','sex']);
+  const colHireDate = find(['original_hire_date','hire_date','start_date','date_of_joining']);
+  const colLastHire = find(['last_hire_date','rehire_date']);
+  const colDOB      = find(['date_of_birth','dob','birth_date']);
+  const colStatus   = find(['employment_status','emp_status','employee_status','worker_status']);
+  const colTermType  = find(['termination_type','term_type','exit_type']);
+  const colTermReason= find(['termination_reason','term_reason','exit_reason','reason_for_leaving']);
+  const colTermDate  = find(['termination_date','term_date','exit_date','last_day']);
+
+  const ACTIVE_VALUES = new Set(['active','a','1','yes','leave of absence','loa','leave','on leave','on loa']);
+
+  const today = new Date();
+  rows.forEach(r => {
+    const statusVal = (colStatus && r[colStatus] || '').toLowerCase().trim();
+    r._isActive = !colStatus || ACTIVE_VALUES.has(statusVal);
+    r._termType   = (colTermType   && r[colTermType])   || null;
+    r._termReason = (colTermReason && r[colTermReason]) || null;
+    r._termDate   = (colTermDate   && r[colTermDate])   || null;
+    r._company = (colCompany && r[colCompany]) || 'Unknown';
+    r._country  = (colCountry && r[colCountry]) || 'Unknown';
+    r._region   = c2r(r._country);
+    r._org2     = (colOrg2 && r[colOrg2]) || 'Unknown';
+    r._org3     = (colOrg3 && r[colOrg3]) || 'Unknown';
+    r._org4     = (colOrg4 && r[colOrg4]) || 'Unknown';
+    r._gender   = (colGender && r[colGender]) || null;
+    r._tenureYears = null;
+    const rd = (colHireDate && r[colHireDate]) || (colLastHire && r[colLastHire]);
+    if (rd) { const d = new Date(rd); if (!isNaN(d)) r._tenureYears = (today - d) / (1000*60*60*24*365.25); }
+  });
+
+  const activeRows = rows.filter(r => r._isActive);
+  const excludedCount = rows.length - activeRows.length;
+  // Tag _company on allRows too so KPI company count works across all entities
+  return { rows: activeRows, allRows: rows, excludedCount, filename, colOrg3, colOrg4, colCompany, colStatus, colTermType, colTermReason, colTermDate };
+}
+
+const countBy = (rows, key) => { const m = {}; rows.forEach(r => { const v = r[key]||'Unknown'; m[v]=(m[v]||0)+1; }); return m; };
+const avgBy = (rows, key, val) => { const s={}, c={}; rows.forEach(r => { const k=r[key]||'Unknown'; if (r[val]!=null){s[k]=(s[k]||0)+r[val];c[k]=(c[k]||0)+1;} }); const o={}; Object.keys(s).forEach(k=>o[k]=s[k]/c[k]); return o; };
+const sorted = (obj, desc=true) => Object.entries(obj).sort((a,b) => desc ? b[1]-a[1] : a[1]-b[1]);
+
+function estAttrition(activeRows, allRows) {
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - 1);
+  const exits = allRows.filter(r => {
+    if (!r._isActive && (r._termType||'').toLowerCase() === 'voluntary') {
+      const d = new Date(r._termDate);
+      return !isNaN(d) && d >= cutoff;
+    }
+    return false;
+  }).length;
+  const total = activeRows.length + exits;
+  return total > 0 ? Math.round(exits/total*100) : null;
+}
+
+function renderReport(data) {
+  const { rows, excludedCount, filename, colOrg3, colOrg4, colStatus } = data;
+  const total = rows.length;
+  const withTenure = rows.filter(r => r._tenureYears != null);
+  const avgTenure = withTenure.length ? withTenure.reduce((s,r)=>s+r._tenureYears,0)/withTenure.length : null;
+  const attrPct = estAttrition(rows, data.allRows);
+  const companyMap = countBy(rows,'_company');
+  const companies = Object.keys(companyMap).length;
+  const topCompany = sorted(companyMap)[0];
+
+  const termedNote = colStatus && excludedCount > 0 ? `${excludedCount.toLocaleString()} non-active excluded` : '';
+  document.getElementById('trendNote').textContent = `${total.toLocaleString()} employees`;
+  const allCompanies = Object.keys(countBy(data.allRows,'_company'));
+  const activeCompanies = new Set(rows.map(r=>r._company));
+  const inactiveCompanies = allCompanies.filter(c => !activeCompanies.has(c));
+  document.getElementById('kpiStrip').innerHTML = [
+    { label: 'Active entities', value: activeCompanies.size },
+    { label: 'Inactive entities', value: inactiveCompanies.length },
+    { label: 'Active headcount', value: total.toLocaleString() },
+    { label: 'Voluntary attrition', value: attrPct != null ? attrPct + '%' : '—' },
+  ].map(k => `<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.value}</div></div>`).join('');
+
+  buildNarrative(rows, total, avgTenure, attrPct, topCompany, companies);
+
+  // ── Gender donut — same style as Vol/Invol chart ──
+  const gMap = countBy(rows,'_gender');
+  const gEntries = sorted(gMap);
+  const gColors = [BLUE, BLUE_LIGHT, BLUE_PALE, SLATE, STEEL];
+  dc('genderChart');
+  if (window._genderResizeObs) { window._genderResizeObs.disconnect(); window._genderResizeObs = null; }
+  charts['genderChart'] = new Chart(document.getElementById('genderChart'), {
+    type: 'doughnut',
+    data: {
+      labels: gEntries.map(e=>e[0]),
+      datasets: [{ data: gEntries.map(e=>e[1]), backgroundColor: gColors, borderWidth: 3, borderColor: '#fff' }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '58%',
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { color: tickC, font: { size: 12, family:"'Segoe UI'" }, padding: 14, boxWidth: 12, boxHeight: 12 } },
+        tooltip: { backgroundColor:'#0f0e0c', titleColor:'#f9f6f0', bodyColor:'#c8c5bb',
+          callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed} (${Math.round(ctx.parsed/total*100)}%)` } }
+      },
+      animation: { onComplete: function() {
+        const ctx2 = this.ctx;
+        const W2 = this.chartArea;
+        const cx2 = (W2.left+W2.right)/2, cy2 = (W2.top+W2.bottom)/2;
+        ctx2.save();
+        ctx2.fillStyle = '#0f0e0c'; ctx2.font = '500 24px DM Sans, sans-serif';
+        ctx2.textAlign = 'center'; ctx2.textBaseline = 'middle';
+        ctx2.fillText(total.toLocaleString(), cx2, cy2 - 10);
+        ctx2.fillStyle = '#7a7870'; ctx2.font = '400 11px DM Sans, sans-serif';
+        ctx2.fillText('employees', cx2, cy2 + 10);
+        ctx2.restore();
+        // Pct labels on each slice
+        this.data.datasets.forEach((ds, di) => {
+          this.getDatasetMeta(di).data.forEach((arc, j) => {
+            const val = ds.data[j];
+            if (!val) return;
+            const pct = Math.round(val/total*100);
+            if (pct < 5) return;
+            const pos = arc.tooltipPosition();
+            ctx2.save();
+            ctx2.fillStyle = '#fff';
+            ctx2.font = '500 13px DM Sans, sans-serif';
+            ctx2.textAlign = 'center'; ctx2.textBaseline = 'middle';
+            ctx2.fillText(pct+'%', pos.x, pos.y);
+            ctx2.restore();
+          });
+        });
+      }}
+    }
+  });
+  // ── HC Trend ──
+  const hbm = {};
+  rows.filter(r=>r._tenureYears!=null).forEach(r => {
+    const d = new Date(Date.now() - r._tenureYears*365.25*24*60*60*1000);
+    const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    hbm[ym] = (hbm[ym]||0)+1;
+  });
+  const sMonths = Object.keys(hbm).sort();
+  let cum = 0;
+  dc('hcTrendChart');
+  charts['hcTrendChart'] = new Chart(document.getElementById('hcTrendChart'), {
+    type: 'line',
+    data: { labels: sMonths.map(m => { const [y,mo]=m.split('-'); return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo-1]} ${y.slice(2)}`; }),
+            datasets: [{ label:'Headcount', data: sMonths.map(m=>{cum+=hbm[m];return cum;}), borderColor: BLUE, backgroundColor:'rgba(26,58,92,0.07)', fill:true, tension:0.4, pointRadius:0, borderWidth:2 }] },
+    options: { ...baseChart, scales: { ...baseChart.scales, x: { ...baseChart.scales.x, ticks:{...baseChart.scales.x.ticks, maxTicksLimit:8, autoSkip:true} } } }
+  });
+
+  // ── Cost Center chart (Org Level 2 actual values) ──
+  const ccMap = countBy(rows,'_org2');
+  const ccEntries = sorted(ccMap).slice(0,15);
+  dc('costCenterChart');
+  charts['costCenterChart'] = new Chart(document.getElementById('costCenterChart'), {
+    type: 'bar',
+    data: { labels: ccEntries.map(e=>e[0]), datasets: [{ label:'Headcount', data: ccEntries.map(e=>e[1]), backgroundColor: BLUE, borderRadius:3 }] },
+    options: { ...baseChart, indexAxis:'y', scales: { x:{...baseChart.scales.x}, y:{...baseChart.scales.y, ticks:{color:tickC, font:{size:11, family:"'Segoe UI'"}}} } }
+  });
+
+  // ── Ops Segment chart (Org Level 3) ──
+  const opsMap = countBy(rows,'_org3');
+  const opsEntries = sorted(opsMap).filter(e=>e[0]!=='Unknown').slice(0,15);
+  dc('opsSegChart');
+  if (opsEntries.length) {
+    charts['opsSegChart'] = new Chart(document.getElementById('opsSegChart'), {
+      type: 'bar',
+      data: { labels: opsEntries.map(e=>e[0]), datasets: [{ label:'Headcount', data: opsEntries.map(e=>e[1]), backgroundColor: BLUE_MID, borderRadius:3 }] },
+      options: { ...baseChart, indexAxis:'y', scales: { x:{...baseChart.scales.x}, y:{...baseChart.scales.y, ticks:{color:tickC, font:{size:11, family:"'Segoe UI'"}}} } }
+    });
+  } else {
+    document.querySelector('#tab-ops .chart-wrap').innerHTML = '<p style="color:var(--ink-3);font-size:13px;padding:1rem 0;">Org Level 3 column not detected in your file.</p>';
+  }
+
+  // ── Region chart (countries classified) ──
+  const regMap = countBy(rows,'_region');
+  const regEntries = sorted(regMap);
+  dc('regionChart');
+  charts['regionChart'] = new Chart(document.getElementById('regionChart'), {
+    type: 'bar',
+    data: { labels: regEntries.map(e=>e[0]), datasets: [{ label:'Headcount', data: regEntries.map(e=>e[1]), backgroundColor: BLUE_LIGHT, borderRadius:3 }] },
+    options: { ...baseChart, indexAxis:'y', scales: { x:{...baseChart.scales.x}, y:{...baseChart.scales.y, ticks:{color:tickC, font:{size:11, family:"'Segoe UI'"}}} } }
+  });
+
+  // ── Attrition data from allRows (termed employees) ──
+  const termedRows = data.allRows.filter(r => !r._isActive);
+  const cutoff12m = new Date();
+  cutoff12m.setFullYear(cutoff12m.getFullYear() - 1);
+  const termedLast12 = termedRows.filter(r => {
+    if (!r._termDate) return false;
+    const d = new Date(r._termDate);
+    return !isNaN(d) && d >= cutoff12m;
+  });
+
+  const volCount      = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'voluntary').length;
+  const involCount    = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'involuntary').length;
+  const totalTermed   = volCount + involCount;
+
+  document.getElementById('attrNote').textContent = `${totalTermed} exits (last 12 months) · ${volCount} voluntary · ${involCount} involuntary`;
+
+  // ── Voluntary vs Involuntary donut ──
+  dc('attrSplitChart');
+  charts['attrSplitChart'] = new Chart(document.getElementById('attrSplitChart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Involuntary','Voluntary'],
+      datasets: [{ data: [involCount, volCount], backgroundColor: [WARN, BLUE], borderWidth: 3, borderColor: '#fff' }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '58%',
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { color: tickC, font: { size: 12, family:"'Segoe UI'" }, padding: 14, boxWidth: 12, boxHeight: 12 } },
+        tooltip: { backgroundColor:'#0f0e0c', titleColor:'#f9f6f0', bodyColor:'#c8c5bb',
+          callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed} (${Math.round(ctx.parsed/totalTermed*100)}%)` } }
+      },
+      animation: { onComplete: function() {
+        const ctx2 = this.ctx;
+        const W2 = this.chartArea;
+        const cx2 = (W2.left+W2.right)/2, cy2 = (W2.top+W2.bottom)/2;
+        ctx2.save();
+        ctx2.fillStyle = '#0f0e0c'; ctx2.font = '500 24px DM Sans, sans-serif';
+        ctx2.textAlign = 'center'; ctx2.textBaseline = 'middle';
+        ctx2.fillText(totalTermed, cx2, cy2 - 10);
+        ctx2.fillStyle = '#7a7870'; ctx2.font = '400 11px DM Sans, sans-serif';
+        ctx2.fillText('exits', cx2, cy2 + 10);
+        ctx2.restore();
+        this.data.datasets.forEach((ds, di) => {
+          this.getDatasetMeta(di).data.forEach((arc, j) => {
+            const val = ds.data[j];
+            if (!val) return;
+            const pct = Math.round(val/totalTermed*100);
+            if (pct < 5) return;
+            const pos = arc.tooltipPosition();
+            ctx2.save();
+            ctx2.fillStyle = '#fff';
+            ctx2.font = '500 13px DM Sans, sans-serif';
+            ctx2.textAlign = 'center'; ctx2.textBaseline = 'middle';
+            ctx2.fillText(pct+'%', pos.x, pos.y);
+            ctx2.restore();
+          });
+        });
+      }}
+    }
+  });
+
+  // ── Top termination reasons bar (excl. transfers) ──
+  const reasonMap = {};
+  termedLast12.filter(r => (r._termType||'').toLowerCase() !== 'transfer')
+    .forEach(r => { const v = r._termReason || 'Unknown'; reasonMap[v] = (reasonMap[v]||0)+1; });
+  const topReasons = sorted(reasonMap).filter(e=>e[0]!=='Unknown').slice(0,10);
+  dc('termReasonChart');
+  charts['termReasonChart'] = new Chart(document.getElementById('termReasonChart'), {
+    type: 'bar',
+    data: { labels: topReasons.map(e=>e[0]), datasets: [{ label:'Count', data: topReasons.map(e=>e[1]), backgroundColor: topReasons.map((_,i) => [BLUE,BLUE_MID,BLUE_LIGHT,SLATE,STEEL,BLUE,BLUE_MID,BLUE_LIGHT,SLATE,STEEL][i]), borderRadius:3 }] },
+    options: { ...baseChart, indexAxis:'y', scales: { x:{...baseChart.scales.x}, y:{...baseChart.scales.y, ticks:{color:tickC, font:{size:11, family:"'Segoe UI'"}}} } }
+  });
+
+  // ── Month on month chart (excl. transfers) ──
+  const momMap = {};
+  termedRows.filter(r => (r._termType||'').toLowerCase() !== 'transfer').forEach(r => {
+    if (!r._termDate) return;
+    const d = new Date(r._termDate);
+    if (isNaN(d)) return;
+    const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    if (!momMap[ym]) momMap[ym] = { Voluntary:0, Involuntary:0 };
+    const t = r._termType || 'Unknown';
+    if (momMap[ym][t] !== undefined) momMap[ym][t]++;
+  });
+  const momMonths = Object.keys(momMap).sort().slice(-24);
+  const fmtM = m => { const [y,mo]=m.split('-'); return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo-1]} ${y.slice(2)}`; };
+  dc('momChart');
+  charts['momChart'] = new Chart(document.getElementById('momChart'), {
+    type: 'bar',
+    data: {
+      labels: momMonths.map(fmtM),
+      datasets: [
+        { label:'Involuntary', data: momMonths.map(m=>(momMap[m]||{}).Involuntary||0), backgroundColor: WARN, borderRadius:3, stack:'s' },
+        { label:'Voluntary',   data: momMonths.map(m=>(momMap[m]||{}).Voluntary||0),   backgroundColor: BLUE, borderRadius:3, stack:'s' },
+      ]
+    },
+    options: { ...baseChart, scales: { x:{...baseChart.scales.x, stacked:true, ticks:{...baseChart.scales.x.ticks, maxTicksLimit:12, autoSkip:true, maxRotation:45}}, y:{...baseChart.scales.y, stacked:true} } }
+  });
+
+  // ── Terminations by Cost Center stacked bar (excl. transfers) ──
+  const ccTermMap = {};
+  termedLast12.filter(r => (r._termType||'').toLowerCase() !== 'transfer').forEach(r => {
+    const cc = r._org2||'Unknown'; const t = r._termType||'Unknown';
+    if (!ccTermMap[cc]) ccTermMap[cc] = {Voluntary:0,Involuntary:0};
+    if (ccTermMap[cc][t]!==undefined) ccTermMap[cc][t]++;
+  });
+  const ccTermLabels = Object.keys(ccTermMap).sort();
+  dc('attrCCChart');
+  charts['attrCCChart'] = new Chart(document.getElementById('attrCCChart'), {
+    type: 'bar',
+    data: {
+      labels: ccTermLabels,
+      datasets: [
+        { label:'Involuntary', data: ccTermLabels.map(c=>ccTermMap[c].Involuntary), backgroundColor: WARN, borderRadius:3, stack:'s' },
+        { label:'Voluntary',   data: ccTermLabels.map(c=>ccTermMap[c].Voluntary),   backgroundColor: BLUE, borderRadius:3, stack:'s' },
+      ]
+    },
+    options: { ...baseChart, indexAxis:'y', scales: { x:{...baseChart.scales.x, stacked:true}, y:{...baseChart.scales.y, stacked:true, ticks:{color:tickC, font:{size:11, family:"'Segoe UI'"}}} } }
+  });
+
+  // ── Terminations by Product stacked bar (excl. transfers, top 15) ──
+  const prodTermMap = {};
+  termedLast12.filter(r => (r._termType||'').toLowerCase() !== 'transfer').forEach(r => {
+    const p = r._org4||'Unknown'; const t = r._termType||'Unknown';
+    if (!prodTermMap[p]) prodTermMap[p] = {Voluntary:0,Involuntary:0,_total:0};
+    if (prodTermMap[p][t]!==undefined) prodTermMap[p][t]++;
+    prodTermMap[p]._total++;
+  });
+  const prodTermLabels = Object.entries(prodTermMap).filter(([k])=>k!=='Unknown').sort((a,b)=>b[1]._total-a[1]._total).slice(0,15).map(e=>e[0]);
+  dc('attrProdChart');
+  charts['attrProdChart'] = new Chart(document.getElementById('attrProdChart'), {
+    type: 'bar',
+    data: {
+      labels: prodTermLabels,
+      datasets: [
+        { label:'Involuntary', data: prodTermLabels.map(p=>prodTermMap[p].Involuntary), backgroundColor: WARN, borderRadius:3, stack:'s' },
+        { label:'Voluntary',   data: prodTermLabels.map(p=>prodTermMap[p].Voluntary),   backgroundColor: BLUE, borderRadius:3, stack:'s' },
+      ]
+    },
+    options: { ...baseChart, indexAxis:'y', scales: { x:{...baseChart.scales.x, stacked:true}, y:{...baseChart.scales.y, stacked:true, ticks:{color:tickC, font:{size:11, family:"'Segoe UI'"}}} } }
+  });
+
+  // ── Regional attrition bars (actual termed counts per region) ──
+  const regTermMap = {};
+  termedLast12.filter(r => (r._termType||'').toLowerCase() === 'voluntary').forEach(r => {
+    regTermMap[r._region] = (regTermMap[r._region]||0)+1;
+  });
+  const barColors = [BLUE, BLUE_MID, BLUE_LIGHT, SLATE, STEEL, BLUE_PALE, MUTED];
+  const regAttrArr = regEntries.map(([reg, activeCount]) => ({
+    reg, activeCount, termedCount2: regTermMap[reg]||0,
+    pct: (activeCount + (regTermMap[reg]||0)) > 0 ? Math.round((regTermMap[reg]||0)/(activeCount + (regTermMap[reg]||0))*100) : 0
+  })).sort((a,b)=>b.pct-a.pct);
+  const maxRegPct = Math.max(...regAttrArr.map(e=>e.pct), 1);
+  document.getElementById('regionAttrBars').innerHTML = regAttrArr.map((e,i) => {
+    const barW = Math.round(e.pct/maxRegPct*100);
+    return `<div class="hbar-row">
+      <div class="hbar-label">${e.reg}</div>
+      <div class="hbar-track"><div class="hbar-fill" style="width:${barW}%;background:${barColors[i%barColors.length]};"><span>${e.pct}%</span></div></div>
+      <div class="hbar-pct" style="width:110px;font-size:11px;">${e.termedCount2} exits · ${e.activeCount} active</div>
+    </div>`;
+  }).join('') + `<p style="font-size:11px;color:var(--ink-3);margin-top:10px;">Attrition % = voluntary exits (last 12 months) ÷ (active + voluntary exits last 12 months). Involuntary exits and transfers excluded from attrition %.</p>`;
+
+  // ── Tenure chart ──
+  const bands = {'< 1 yr':0,'1–2 yr':0,'2–4 yr':0,'4–7 yr':0,'7–10 yr':0,'10+ yr':0};
+  withTenure.forEach(r => {
+    const t = r._tenureYears;
+    if (t<1) bands['< 1 yr']++; else if (t<2) bands['1–2 yr']++;
+    else if (t<4) bands['2–4 yr']++; else if (t<7) bands['4–7 yr']++;
+    else if (t<10) bands['7–10 yr']++; else bands['10+ yr']++;
+  });
+  dc('tenureChart');
+  charts['tenureChart'] = new Chart(document.getElementById('tenureChart'), {
+    type: 'bar',
+    data: { labels: Object.keys(bands), datasets: [{ label:'Employees', data: Object.values(bands), backgroundColor: Object.keys(bands).map((_,i)=>PALETTE[i%PALETTE.length]), borderRadius:4 }] },
+    options: { ...baseChart }
+  });
+
+  // ── Cost Center table (with vol/invol/transfer) ──
+  const avgTCC = avgBy(rows,'_org2','_tenureYears');
+  document.getElementById('ccTableBody').innerHTML = ccEntries.map(([cc, count]) => {
+    const pct = Math.round(count/total*100);
+    const tenure = avgTCC[cc] ? avgTCC[cc].toFixed(1) : '—';
+    const fPct = Math.round(rows.filter(r=>r._org2===cc && r._gender && r._gender.toLowerCase().startsWith('f')).length / count * 100);
+    const vol = ccTermMap[cc] ? ccTermMap[cc].Voluntary : 0;
+    const invol = ccTermMap[cc] ? ccTermMap[cc].Involuntary : 0;
+    return `<tr><td>${cc}</td><td>${count.toLocaleString()}</td><td><span class="badge badge-neu">${pct}%</span></td><td>${vol}</td><td>${invol}</td><td>${tenure}</td><td>${isNaN(fPct)?'—':fPct+'%'}</td></tr>`;
+  }).join('');
+
+  // ── Ops Segment table ──
+  const avgTOps = avgBy(rows,'_org3','_tenureYears');
+  document.getElementById('opsTableBody').innerHTML = opsEntries.length
+    ? opsEntries.map(([seg, count]) => {
+        const pct = Math.round(count/total*100);
+        const tenure = avgTOps[seg] ? avgTOps[seg].toFixed(1) : '—';
+        return `<tr><td>${seg}</td><td>${count.toLocaleString()}</td><td><span class="badge badge-neu">${pct}%</span></td><td>${tenure}</td></tr>`;
+      }).join('')
+    : '<tr><td colspan="4" style="color:var(--ink-3);font-style:italic;">Org Level 3 not found in file</td></tr>';
+
+  // ── Product table (with vol/invol/transfer) ──
+  const prodMap = countBy(rows,'_org4');
+  const prodEntries = sorted(prodMap).filter(e=>e[0]!=='Unknown').slice(0,20);
+  const avgTProd = avgBy(rows,'_org4','_tenureYears');
+  document.getElementById('productTableBody').innerHTML = prodEntries.length
+    ? prodEntries.map(([prod, count]) => {
+        const pct = Math.round(count/total*100);
+        const tenure = avgTProd[prod] ? avgTProd[prod].toFixed(1) : '—';
+        const vol = prodTermMap[prod] ? prodTermMap[prod].Voluntary : 0;
+        const invol = prodTermMap[prod] ? prodTermMap[prod].Involuntary : 0;
+        return `<tr><td>${prod}</td><td>${count.toLocaleString()}</td><td><span class="badge badge-neu">${pct}%</span></td><td>${vol}</td><td>${invol}</td><td>${tenure}</td></tr>`;
+      }).join('')
+    : '<tr><td colspan="6" style="color:var(--ink-3);font-style:italic;">Org Level 4 (Product) not found in file</td></tr>';
+
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('report-screen').style.display = 'block';
+}
+
+function buildNarrative(rows, total, avgTenure, attrPct, topCompany, companies) {
+  const regMap = countBy(rows,'_region');
+  const ccMap = countBy(rows,'_org2');
+  const topReg = sorted(regMap)[0];
+  const topCC = sorted(ccMap)[0];
+  const gMap = countBy(rows,'_gender');
+  const gList = sorted(gMap);
+  const withT = rows.filter(r=>r._tenureYears!=null);
+  const newJ = withT.filter(r=>r._tenureYears<1).length;
+  const longT = withT.filter(r=>r._tenureYears>=5).length;
+
+  let n = `The workforce stands at <strong>${total.toLocaleString()} employees</strong>`;
+  if (companies === 1 && topCompany) n += ` under <strong>${topCompany[0]}</strong>`;
+  else if (companies > 1) n += ` across <strong>${companies} legal entities</strong>`;
+  n += `.`;
+  if (topReg) n += ` <strong>${topReg[0]}</strong> is the largest region with <strong>${topReg[1].toLocaleString()} employees</strong> (${Math.round(topReg[1]/total*100)}%).`;
+  if (topCC) n += ` The <strong>${topCC[0]}</strong> cost center leads headcount at <strong>${topCC[1].toLocaleString()}</strong>.`;
+  if (attrPct != null) n += ` Estimated attrition stands at <strong>${attrPct}%</strong>.`;
+  if (newJ) n += ` <strong>${newJ.toLocaleString()} employees</strong> (${Math.round(newJ/total*100)}%) have under one year of tenure — a signal of active recent hiring.`;
+  if (longT) n += ` <strong>${longT.toLocaleString()} employees</strong> (${Math.round(longT/total*100)}%) have 5+ years of tenure, indicating strong retention of senior talent.`;
+  if (gList.length > 1) n += ` Gender split: <strong>${gList[0][0]}</strong> ${Math.round(gList[0][1]/total*100)}%, <strong>${gList[1][0]}</strong> ${Math.round(gList[1][1]/total*100)}%.`;
+
+  document.getElementById('aiText').innerHTML = n;
+}
+
+function switchTab(tab) {
+  ['cc','ops','region'].forEach(t => { document.getElementById('tab-'+t).style.display = t===tab?'':'none'; });
+  document.querySelectorAll('.tab').forEach((el,i) => { el.classList.toggle('active', ['cc','ops','region'][i]===tab); });
+}
+
+function exportReport() {
+  // Capture current rendered report body HTML
+  const reportHeader = document.querySelector('.report-header').outerHTML;
+  const reportBody = document.querySelector('.report-body').outerHTML;
+  const date = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+
+  const scriptClose = '<' + '/script>';
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HC Analytics Report · ${date}</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js">` + `</` + `script>
+<style>
+:root{--ink:#0f0e0c;--ink-2:#3a3830;--ink-3:#7a7870;--paper:#f9f6f0;--surface:#ffffff;--accent:#1a3a5c;--accent-2:#c84b2f;--border:rgba(15,14,12,0.10);--border-strong:rgba(15,14,12,0.18);--radius:4px;--radius-lg:8px}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased}
+.report-header{background:linear-gradient(135deg,#0a2240 0%,#1565c0 55%,#1e88e5 100%);color:#fff;padding:2.5rem 3rem 2rem}
+.rh-top{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem}
+.rh-title{font-family:Georgia,'Times New Roman',serif;font-size:clamp(1.6rem,3.5vw,2.6rem);line-height:1.15}
+.rh-title em{font-style:italic;color:#90caf9}
+.kpi-strip{display:flex;flex-wrap:wrap;gap:0;border-top:1px solid rgba(255,255,255,.2);padding-top:1.5rem}
+.kpi{padding:0 2.5rem 0 0;min-width:140px}
+.kpi-label{font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+.kpi-value{font-size:2.2rem;font-weight:300;line-height:1}
+.report-body{max-width:1100px;margin:0 auto;padding:2.5rem 2rem 4rem}
+.ai-narrative{border-left:3px solid var(--accent-2);padding:1.25rem 1.5rem;margin-bottom:2.5rem;background:var(--surface);border-radius:0 var(--radius-lg) var(--radius-lg) 0}
+.ai-label{font-size:11px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-2);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.ai-pulse{width:7px;height:7px;border-radius:50%;background:var(--accent-2)}
+.ai-text{font-size:15px;line-height:1.75;color:var(--ink-2)}
+.ai-text strong{color:var(--ink);font-weight:500}
+.section-head{display:flex;align-items:baseline;justify-content:space-between;margin:2rem 0 1rem;border-bottom:1px solid var(--border);padding-bottom:8px}
+.section-title{font-family:Georgia,'Times New Roman',serif;font-size:18px;color:var(--ink)}
+.section-note{font-size:12px;color:var(--ink-3)}
+.chart-grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:1.5rem;margin-bottom:1.5rem}
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem 1.5rem 1.5rem}
+.cc-title{font-size:14px;font-weight:500;color:var(--ink);margin-bottom:2px}
+.cc-sub{font-size:12px;color:var(--ink-3);margin-bottom:14px}
+.chart-wrap{position:relative;width:100%}
+.legend{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:10px}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-3)}
+.legend-swatch{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.tab-row{display:flex;gap:4px;margin-bottom:1.25rem;flex-wrap:wrap}
+.tab{font-size:13px;padding:6px 16px;border-radius:99px;border:1px solid var(--border-strong);background:transparent;color:var(--ink-3);cursor:pointer}
+.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.hbar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.hbar-label{font-size:13px;color:var(--ink-3);width:140px;flex-shrink:0;text-align:right}
+.hbar-track{flex:1;background:#eee;border-radius:3px;height:22px;overflow:hidden}
+.hbar-fill{height:100%;border-radius:3px;display:flex;align-items:center;padding-left:10px}
+.hbar-fill span{font-size:12px;font-weight:500;color:#fff}
+.hbar-pct{font-size:12px;color:var(--ink-3);width:110px;text-align:right;flex-shrink:0}
+.full-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem 1.5rem 1.75rem;margin-bottom:1.5rem}
+.data-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+.data-table th{text-align:left;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);padding:8px 10px;border-bottom:1px solid var(--border)}
+.data-table td{padding:9px 10px;border-bottom:1px solid var(--border);color:var(--ink-2)}
+.data-table tr:last-child td{border-bottom:none}
+.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;font-weight:500}
+.badge-neu{background:#ebebeb;color:#555}
+.report-footer{text-align:center;padding:2rem;font-size:12px;color:var(--ink-3);border-top:1px solid var(--border)}
+@media(max-width:640px){.report-header{padding:1.5rem}.report-body{padding:1.5rem 1rem 3rem}.chart-grid-2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="report-header">
+  <div class="rh-top">
+    <div><div class="rh-title">Headcount &amp; <em>attrition</em></div></div>
+    <div style="font-size:13px;opacity:.7">${date}</div>
+  </div>
+  <div class="kpi-strip">${document.getElementById('kpiStrip').innerHTML}</div>
+</div>
+<div class="report-body">
+${document.querySelector('.report-body').innerHTML}
+</div>
+<div class="report-footer">Generated ${date} · HC Analytics Report · Data processed locally — no data was stored or transmitted.</div>
+<` + `script>
+function switchTab(tab){['cc','ops','region'].forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.style.display=t===tab?'':'none';});document.querySelectorAll('.tab').forEach((el,i)=>{el.classList.toggle('active',['cc','ops','region'][i]===tab);});}
+const BLUE='#1a3a5c',BLUE_MID='#2a5f8c',BLUE_LIGHT='#4a8ab5',BLUE_PALE='#85b7d9',SLATE='#3a4a5c',STEEL='#5a7a8c',MUTED='#8ca5b5',WARN='#c84b2f';
+const PALETTE=[BLUE,BLUE_MID,BLUE_LIGHT,SLATE,STEEL,BLUE_PALE,MUTED,'#2a4a6c','#1a4a6c','#3a6a8c'];
+const gridC='rgba(15,14,12,0.07)',tickC='#7a7870';
+${getChartRebuildScript()}
+${scriptClose}
+</body>
+</html>`;
+
+  const blob = new Blob([html], {type:'text/html'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `HC-Analytics-Report-${date.replace(/\s/g,'-')}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function getChartRebuildScript() {
+  // Serialize current chart data so the exported HTML can rebuild them
+  const lines = [];
+  Object.entries(charts).forEach(([id, chart]) => {
+    if (!chart || !chart.data) return;
+    const type = chart.config.type;
+    const labels = JSON.stringify(chart.data.labels || []);
+    const datasets = JSON.stringify(chart.data.datasets.map(ds => ({
+      label: ds.label,
+      data: ds.data,
+      backgroundColor: ds.backgroundColor,
+      borderColor: ds.borderColor,
+      borderWidth: ds.borderWidth,
+      borderRadius: ds.borderRadius,
+      fill: ds.fill,
+      tension: ds.tension,
+      pointRadius: ds.pointRadius,
+      stack: ds.stack,
+    })));
+    const opts = JSON.stringify(chart.options);
+    lines.push(`(function(){const el=document.getElementById(${JSON.stringify(id)});if(!el)return;try{new Chart(el,{type:${JSON.stringify(type)},data:{labels:${labels},datasets:${datasets}},options:${opts}});}catch(e){}})();`);
+  });
+  return lines.join('\n');
+}
+
+function resetReport() {
+  document.getElementById('upload-screen').style.display = 'flex';
+  document.getElementById('fileInput').value = '';
+  Object.values(charts).forEach(c=>c.destroy()); charts = {};
+  if (window._genderResizeObs) { window._genderResizeObs.disconnect(); window._genderResizeObs = null; }
+}
+
+function loadSampleData() {
+  const countries = ['India','India','India','United States','United States','United Kingdom','Germany','Singapore','Australia','UAE','France','Canada'];
+  const costCenters = ['Engineering','Operations','Finance','Human Resources','Sales','Legal & Compliance'];
+  const opsSegs = ['Core Platform','Customer Success','Risk & Control','Financial Planning','Revenue Growth','People Operations'];
+  const products = ['Product Alpha','Product Beta','Product Gamma','Product Delta','Product Epsilon'];
+  const genders = ['Male','Female','Female','Male','Non-binary'];
+  const now = new Date();
+  let tsv = 'Employee_ID\tGender\tCountry\tCompany\tOrg_Level_2\tOrg_Level_3\tOrg_Level_4\tOriginal_Hire_Date\tDate_of_Birth\tEmployment_Status\n';
+  for (let i = 1; i <= 600; i++) {
+    const hya = Math.random()*12;
+    const hd = new Date(now - hya*365.25*24*60*60*1000);
+    const ay = 22+Math.random()*38;
+    const dob = new Date(now - ay*365.25*24*60*60*1000);
+    const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const status = Math.random() < 0.12 ? 'Terminated' : 'Active';
+    tsv += `EMP${String(i).padStart(4,'0')}\t${genders[i%genders.length]}\t${countries[i%countries.length]}\tAcme Corp\t${costCenters[i%costCenters.length]}\t${opsSegs[i%opsSegs.length]}\t${products[i%products.length]}\t${fmt(hd)}\t${fmt(dob)}\t${status}\n`;
+  }
+  document.getElementById('upload-screen').style.display = 'none';
+  document.getElementById('loading').style.display = 'flex';
+  setTimeout(() => renderReport(parseHC(tsv, 'sample-data.tsv')), 800);
+}

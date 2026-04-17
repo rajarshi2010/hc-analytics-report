@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HC Analytics Report · Senior Leadership</title>
+
+<script src="chart.min.js"></script>
+<script src="xlsx.min.js"></script>
+<style>
+:root {
+  --ink: #0f0e0c; --ink-2: #3a3830; --ink-3: #7a7870;
+  --paper: #f9f6f0; --surface: #ffffff;
+  --accent: #1a3a5c; --accent-2: #c84b2f; --accent-3: #2d7a5f;
+  --border: rgba(15,14,12,0.10); --border-strong: rgba(15,14,12,0.18);
+  --radius: 4px; --radius-lg: 8px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--paper); color: var(--ink); min-height: 100vh; -webkit-font-smoothing: antialiased; }
+
+#upload-screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; gap: 0; background: var(--paper); position: relative; overflow: hidden; }
+#upload-screen::before { content: ''; position: absolute; top: -120px; left: 50%; transform: translateX(-50%); width: 700px; height: 700px; background: radial-gradient(ellipse at center, rgba(26,58,92,0.07) 0%, transparent 70%); pointer-events: none; }
+.upload-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(26,58,92,0.08); border: 1px solid rgba(26,58,92,0.15); border-radius: 99px; padding: 5px 14px; font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-bottom: 1.75rem; }
+.upload-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 2s ease-in-out infinite; }
+.upload-headline { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(2.8rem,6vw,4.5rem); color: var(--ink); text-align: center; line-height: 1.1; max-width: 680px; margin-bottom: 1.25rem; }
+.upload-headline em { font-style: italic; color: var(--accent); }
+.upload-headline span.accent-word { color: var(--accent-2); font-style: italic; }
+.upload-sub { font-size: 15px; color: var(--ink-3); text-align: center; max-width: 440px; line-height: 1.7; margin-bottom: 2.5rem; }
+.upload-stats { display: flex; gap: 2rem; margin-bottom: 2.5rem; }
+.upload-stat { text-align: center; }
+.upload-stat-num { font-family: Georgia, 'Times New Roman', serif; font-size: 1.6rem; color: var(--ink); line-height: 1; }
+.upload-stat-label { font-size: 11px; color: var(--ink-3); margin-top: 3px; letter-spacing: .04em; }
+.upload-divider { width: 1px; background: var(--border); }
+.drop-zone { width: 100%; max-width: 480px; border: 1.5px dashed var(--border-strong); border-radius: var(--radius-lg); padding: 2.5rem; text-align: center; cursor: pointer; transition: border-color .2s, background .2s; background: var(--surface); margin-bottom: 1rem; }
+.drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: #f0f4f8; }
+.drop-icon { width: 48px; height: 48px; margin: 0 auto 16px; background: linear-gradient(135deg, #e8f0f8 0%, #d4e4f4 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; }
+.drop-label { font-size: 15px; font-weight: 500; color: var(--ink-2); margin-bottom: 6px; }
+.drop-hint { font-size: 13px; color: var(--ink-3); }
+.drop-btn { display: inline-block; margin-top: 16px; padding: 10px 26px; background: var(--accent); color: #fff; border-radius: var(--radius); font-size: 13px; font-weight: 500; cursor: pointer; border: none; letter-spacing: .02em; transition: opacity .15s, transform .1s; }
+.drop-btn:hover { opacity: .9; transform: translateY(-1px); }
+#fileInput { display: none; }
+.sample-btn { font-size: 13px; color: var(--ink-3); cursor: pointer; background: none; border: none; }
+.sample-btn:hover { color: var(--accent); }
+.field-list { font-size: 12px; color: var(--ink-3); text-align: center; max-width: 500px; line-height: 1.9; }
+
+#loading { display: none; min-height: 100vh; align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem; }
+.loading-spinner { width: 36px; height: 36px; border: 3px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-size: 15px; color: var(--ink-3); }
+
+#report-screen { display: none; }
+.report-header { background: linear-gradient(135deg, #0a2240 0%, #1565c0 55%, #1e88e5 100%); color: #fff; padding: 2.5rem 3rem 2rem; position: relative; overflow: hidden; }
+.rh-top { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; }
+.rh-wordmark { font-family: Georgia, 'Times New Roman', serif; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; opacity: .85; margin-bottom: 6px; }
+.rh-title { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(1.6rem,3.5vw,2.4rem); line-height: 1.15; }
+.rh-title em { font-style: italic; color: #90caf9; }
+.rh-meta { font-size: 13px; opacity: .6; margin-top: 6px; font-weight: 300; }
+.rh-reset { background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25); color: #fff; padding: 7px 16px; border-radius: var(--radius); font-size: 13px; cursor: pointer; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; transition: background .15s; }
+.rh-reset:hover { background: rgba(255,255,255,.25); } .rh-export { background: #fff; border: none; color: #1565c0; padding: 7px 18px; border-radius: var(--radius); font-size: 13px; font-weight: 500; cursor: pointer; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; transition: opacity .15s; } .rh-export:hover { opacity: .88; }
+.kpi-strip { display: flex; flex-wrap: wrap; gap: 0; border-top: 1px solid rgba(255,255,255,.2); padding-top: 1.5rem; }
+.kpi { padding: 0 2.5rem 0 0; min-width: 140px; }
+.kpi-label { font-size: 11px; opacity: .6; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }
+.kpi-value { font-size: 2.2rem; font-weight: 300; line-height: 1; }
+
+.report-body { max-width: 1100px; margin: 0 auto; padding: 2.5rem 2rem 4rem; }
+
+.ai-narrative { border-left: 3px solid var(--accent-2); padding: 1.25rem 1.5rem; margin-bottom: 2.5rem; background: var(--surface); border-radius: 0 var(--radius-lg) var(--radius-lg) 0; }
+.ai-label { font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-2); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.ai-pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:.35} }
+.ai-text { font-size: 15px; line-height: 1.75; color: var(--ink-2); }
+.ai-text strong { color: var(--ink); font-weight: 500; }
+
+.section-head { display: flex; align-items: baseline; justify-content: space-between; margin: 2rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.section-title { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; color: var(--ink); }
+.section-note { font-size: 12px; color: var(--ink-3); }
+
+.chart-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px,1fr)); gap: 1.5rem; margin-bottom: 1.5rem; }
+.chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem 1.5rem 1.5rem; }
+.cc-title { font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 2px; }
+.cc-sub { font-size: 12px; color: var(--ink-3); margin-bottom: 14px; }
+.chart-wrap { position: relative; width: 100%; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 10px; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-3); }
+.legend-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+.tab-row { display: flex; gap: 4px; margin-bottom: 1.25rem; flex-wrap: wrap; }
+.tab { font-size: 13px; padding: 6px 16px; border-radius: 99px; border: 1px solid var(--border-strong); background: transparent; color: var(--ink-3); cursor: pointer; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; transition: all .15s; }
+.tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.hbar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.hbar-label { font-size: 13px; color: var(--ink-3); width: 140px; flex-shrink: 0; text-align: right; }
+.hbar-track { flex: 1; background: #eee; border-radius: 3px; height: 22px; overflow: hidden; }
+.hbar-fill { height: 100%; border-radius: 3px; display: flex; align-items: center; padding-left: 10px; transition: width .6s cubic-bezier(.22,1,.36,1); }
+.hbar-fill span { font-size: 12px; font-weight: 500; color: #fff; }
+.hbar-pct { font-size: 12px; color: var(--ink-3); width: 60px; text-align: right; flex-shrink: 0; }
+
+.full-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem 1.5rem 1.75rem; margin-bottom: 1.5rem; }
+
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+.data-table th { text-align: left; font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-3); padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.data-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); color: var(--ink-2); }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: var(--paper); }
+.badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; font-weight: 500; }
+.badge-neu { background: #ebebeb; color: #555; }
+.badge-dn { background: #fde8e8; color: #8b1a1a; }
+
+@media(max-width: 640px) {
+  .report-header { padding: 1.5rem; }
+  .report-body { padding: 1.5rem 1rem 3rem; }
+  .chart-grid-2 { grid-template-columns: 1fr; }
+  .kpi-strip { gap: 1rem; }
+  .kpi { padding: 0; }
+  .kpi-value { font-size: 1.5rem; }
+}
+</style>
+</head>
+<body>
+
+<div id="upload-screen">
+  <div class="upload-badge"><span class="upload-badge-dot"></span>HC Intelligence</div>
+  <h1 class="upload-headline">Turn your headcount data<br>into <span class="accent-word">leadership clarity.</span></h1>
+  <p class="upload-sub">Drop your HC export and get an instant executive report — headcount, attrition, org breakdown, and AI narrative. Nothing leaves your browser.</p>
+  <div class="upload-stats">
+    <div class="upload-stat"><div class="upload-stat-num">16</div><div class="upload-stat-label">Fields tracked</div></div>
+    <div class="upload-divider"></div>
+    <div class="upload-stat"><div class="upload-stat-num">12m</div><div class="upload-stat-label">Attrition window</div></div>
+    <div class="upload-divider"></div>
+    <div class="upload-stat"><div class="upload-stat-num">0</div><div class="upload-stat-label">Data stored</div></div>
+  </div>
+  <div class="drop-zone" id="dropZone">
+    <div class="drop-icon">
+      <svg width="22" height="22" viewBox="0 0 20 20" fill="none">
+        <path d="M10 3v10M6 7l4-4 4 4M4 14v2h12v-2" stroke="#1a3a5c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="drop-label">Drop your HC export here</div>
+    <div class="drop-hint">Excel (.xlsx) · CSV · Tab-separated</div>
+    <button class="drop-btn" onclick="document.getElementById('fileInput').click()">Choose file</button>
+    <input type="file" id="fileInput" accept=".csv,.txt,.tsv,.xlsx,.xls">
+  </div>
+  <button class="sample-btn" onclick="loadSampleData()">Or preview with sample data →</button>
+</div>
+
+<div id="loading">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Analysing your HC data…</div>
+</div>
+
+<div id="report-screen">
+  <div class="report-header">
+    <div class="rh-top">
+      <div>
+        <div class="rh-title">Headcount &amp; <em>attrition</em></div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <button class="rh-export" onclick="exportReport()">↓ Export shareable report</button>
+        <button class="rh-reset" onclick="resetReport()">↩ New report</button>
+      </div>
+    </div>
+    <div class="kpi-strip" id="kpiStrip"></div>
+  </div>
+
+  <div class="report-body">
+    <div class="ai-narrative">
+      <div class="ai-label"><span class="ai-pulse"></span>AI executive summary</div>
+      <div class="ai-text" id="aiText"><em style="color:var(--ink-3);">Generating summary…</em></div>
+    </div>
+
+    <div class="section-head">
+      <div class="section-title">Workforce trends</div>
+      <div class="section-note" id="trendNote">—</div>
+    </div>
+    <div class="chart-grid-2">
+      <div class="chart-card">
+        <div class="cc-title">Headcount by hire month</div>
+        <div class="cc-sub">Cumulative active headcount trend</div>
+        <div class="chart-wrap" style="height:220px;"><canvas id="hcTrendChart" role="img" aria-label="Headcount trend by hire month"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="cc-title">Headcount by gender</div>
+        <div class="cc-sub">Distribution across workforce</div>
+        <div class="chart-wrap" style="height:340px;"><canvas id="genderChart" role="img" aria-label="Headcount by gender with percentage labels"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <div class="section-title">Breakdown by dimension</div>
+      <div class="section-note">Toggle view</div>
+    </div>
+    <div class="full-card">
+      <div class="tab-row">
+        <button class="tab active" onclick="switchTab('cc')">Cost center</button>
+        <button class="tab" onclick="switchTab('ops')">Ops segment</button>
+        <button class="tab" onclick="switchTab('region')">Region</button>
+      </div>
+      <div id="tab-cc">
+        <div class="legend"><span class="legend-item"><span class="legend-swatch" style="background:#1a3a5c;"></span>Headcount by cost center (Org Level 2)</span></div>
+        <div class="chart-wrap" style="height:280px;"><canvas id="costCenterChart" role="img" aria-label="Headcount by cost center"></canvas></div>
+      </div>
+      <div id="tab-ops" style="display:none;">
+        <div class="legend"><span class="legend-item"><span class="legend-swatch" style="background:#c84b2f;"></span>Headcount by ops segment (Org Level 3)</span></div>
+        <div class="chart-wrap" style="height:280px;"><canvas id="opsSegChart" role="img" aria-label="Headcount by ops segment"></canvas></div>
+      </div>
+      <div id="tab-region" style="display:none;">
+        <div class="legend"><span class="legend-item"><span class="legend-swatch" style="background:#2d7a5f;"></span>Headcount by region (countries classified)</span></div>
+        <div class="chart-wrap" style="height:240px;"><canvas id="regionChart" role="img" aria-label="Headcount by region"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <div class="section-title">Attrition overview</div>
+      <div class="section-note" id="attrNote">—</div>
+    </div>
+    <div class="chart-grid-2">
+      <div class="chart-card">
+        <div class="cc-title">Voluntary vs involuntary split</div>
+        <div class="cc-sub">Of all terminations (excl. transfers)</div>
+        <div class="chart-wrap" style="height:260px;"><canvas id="attrSplitChart" role="img" aria-label="Voluntary vs involuntary termination split"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="cc-title">Top termination reasons</div>
+        <div class="cc-sub">All termed employees</div>
+        <div class="chart-wrap" style="height:260px;"><canvas id="termReasonChart" role="img" aria-label="Top termination reasons"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <div class="section-title">Month-on-month terminations</div>
+      <div class="section-note">Voluntary vs involuntary · last 24 months (all time)</div>
+    </div>
+    <div class="full-card">
+      <div class="legend">
+        <span class="legend-item"><span class="legend-swatch" style="background:#c84b2f;"></span>Involuntary</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:#1a3a5c;"></span>Voluntary</span>
+        
+      </div>
+      <div class="chart-wrap" style="height:260px;"><canvas id="momChart" role="img" aria-label="Month on month voluntary and involuntary terminations"></canvas></div>
+    </div>
+
+    <div class="section-head">
+      <div class="section-title">Terminations by cost center</div>
+      <div class="section-note">Voluntary · involuntary · last 12 months</div>
+    </div>
+    <div class="full-card">
+      <div class="legend">
+        <span class="legend-item"><span class="legend-swatch" style="background:#c84b2f;"></span>Involuntary</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:#1a3a5c;"></span>Voluntary</span>
+        
+      </div>
+      <div class="chart-wrap" style="height:340px;"><canvas id="attrCCChart" role="img" aria-label="Terminations by cost center"></canvas></div>
+    </div>
+
+    <div class="section-head">
+      <div class="section-title">Terminations by product</div>
+      <div class="section-note">Top 15 products · last 12 months</div>
+    </div>
+    <div class="full-card">
+      <div class="legend">
+        <span class="legend-item"><span class="legend-swatch" style="background:#c84b2f;"></span>Involuntary</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:#1a3a5c;"></span>Voluntary</span>
+        
+      </div>
+      <div class="chart-wrap" style="height:480px;"><canvas id="attrProdChart" role="img" aria-label="Terminations by product"></canvas></div>
+    </div>
+
+    <div class="section-head">
+      <div class="section-title">Regional attrition</div>
+      <div class="section-note">Estimated attrition % by region · ranked highest to lowest</div>
+    </div>
+    <div class="full-card">
+      <div id="regionAttrBars"></div>
+    </div>
+
+    <div class="section-head">
+      <div class="section-title">Tenure analysis</div>
+      <div class="section-note">Years of service distribution</div>
+    </div>
+    <div class="full-card">
+      <div class="chart-wrap" style="height:220px;"><canvas id="tenureChart" role="img" aria-label="Headcount by tenure band"></canvas></div>
+    </div>
+
+    <div class="section-head">
+      <div class="section-title">Cost center summary</div>
+      <div class="section-note">Org Level 2</div>
+    </div>
+    <div class="full-card" style="overflow-x:auto;">
+      <table class="data-table">
+        <thead><tr><th>Cost center</th><th>Active HC</th><th>Share</th><th>Voluntary exits</th><th>Involuntary exits</th><th>Avg tenure (yrs)</th><th>Female %</th></tr></thead>
+        <tbody id="ccTableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="section-head">
+      <div class="section-title">Ops segment summary</div>
+      <div class="section-note">Org Level 3</div>
+    </div>
+    <div class="full-card" style="overflow-x:auto;">
+      <table class="data-table">
+        <thead><tr><th>Ops segment</th><th>Active HC</th><th>Share</th><th>Avg tenure (yrs)</th></tr></thead>
+        <tbody id="opsTableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="section-head">
+      <div class="section-title">Product summary</div>
+      <div class="section-note">Org Level 4</div>
+    </div>
+    <div class="full-card" style="overflow-x:auto;">
+      <table class="data-table">
+        <thead><tr><th>Product</th><th>Active HC</th><th>Share</th><th>Voluntary exits</th><th>Involuntary exits</th><th>Avg tenure (yrs)</th></tr></thead>
+        <tbody id="productTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
