@@ -217,61 +217,114 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     <div class="chart-grid-2">
       <div class="chart-card">
         <div class="cc-title">Voluntary vs involuntary split</div>
-        <div class="cc-sub">Of all terminations (excl. transfers)</div>
+        <div class="cc-sub">Last 30 days · excl. transfers</div>
         <div class="chart-wrap" style="height:260px;"><canvas id="attrSplitChart" role="img" aria-label="Voluntary vs involuntary termination split"></canvas></div>
       </div>
       <div class="chart-card">
-        <div class="cc-title">Top termination reasons</div>
-        <div class="cc-sub">All termed employees</div>
-        <div class="chart-wrap" style="height:260px;"><canvas id="termReasonChart" role="img" aria-label="Top termination reasons"></canvas></div>
+        <div class="cc-title">Regional attrition</div>
+        <div class="cc-sub">Voluntary exits last 30 days</div>
+        <div id="regionAttrBars" style="padding-top:4px;"></div>
       </div>
     </div>
 
     <div class="section-head">
       <div class="section-title">Month-on-month terminations</div>
-      <div class="section-note">Voluntary vs involuntary · last 24 months (all time)</div>
+      <div class="section-note">Voluntary vs involuntary · all time · excl. transfers & Packaging</div>
     </div>
     <div class="full-card">
       <div class="legend">
         <span class="legend-item"><span class="legend-swatch" style="background:#c84b2f;"></span>Involuntary</span>
         <span class="legend-item"><span class="legend-swatch" style="background:#1a3a5c;"></span>Voluntary</span>
-        
       </div>
       <div class="chart-wrap" style="height:260px;"><canvas id="momChart" role="img" aria-label="Month on month voluntary and involuntary terminations"></canvas></div>
     </div>
 
     <div class="section-head">
-      <div class="section-title">Terminations by cost center</div>
-      <div class="section-note">Voluntary · involuntary · last 12 months</div>
+      <div class="section-title">Exits by cost center</div>
+      <div class="section-note">Last 30 days · voluntary vs involuntary</div>
     </div>
-    <div class="full-card">
-      <div class="legend">
-        <span class="legend-item"><span class="legend-swatch" style="background:#c84b2f;"></span>Involuntary</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#1a3a5c;"></span>Voluntary</span>
-        
+    <div class="chart-grid-2">
+      <div class="chart-card">
+        <div class="cc-title" style="color:#1a3a5c;">Voluntary exits</div>
+        <div class="cc-sub">By cost center</div>
+        <div class="chart-wrap" style="height:160px;"><canvas id="ccVolChart" role="img" aria-label="Voluntary exits by cost center"></canvas></div>
       </div>
-      <div class="chart-wrap" style="height:340px;"><canvas id="attrCCChart" role="img" aria-label="Terminations by cost center"></canvas></div>
+      <div class="chart-card">
+        <div class="cc-title" style="color:#c84b2f;">Involuntary exits</div>
+        <div class="cc-sub">By cost center</div>
+        <div class="chart-wrap" style="height:160px;"><canvas id="ccInvolChart" role="img" aria-label="Involuntary exits by cost center"></canvas></div>
+      </div>
     </div>
 
     <div class="section-head">
-      <div class="section-title">Terminations by product</div>
-      <div class="section-note">Top 15 products · last 12 months</div>
+      <div class="section-title">Exits by ops segment</div>
+      <div class="section-note">Last 30 days · voluntary vs involuntary</div>
     </div>
-    <div class="full-card">
-      <div class="legend">
-        <span class="legend-item"><span class="legend-swatch" style="background:#c84b2f;"></span>Involuntary</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#1a3a5c;"></span>Voluntary</span>
-        
+    <div class="chart-grid-2">
+      <div class="chart-card">
+        <div class="cc-title" style="color:#1a3a5c;">Voluntary exits</div>
+        <div class="cc-sub">By ops segment</div>
+        <div class="chart-wrap" style="height:160px;"><canvas id="opsVolChart" role="img" aria-label="Voluntary exits by ops segment"></canvas></div>
       </div>
-      <div class="chart-wrap" style="height:480px;"><canvas id="attrProdChart" role="img" aria-label="Terminations by product"></canvas></div>
+      <div class="chart-card">
+        <div class="cc-title" style="color:#c84b2f;">Involuntary exits</div>
+        <div class="cc-sub">By ops segment</div>
+        <div class="chart-wrap" style="height:160px;"><canvas id="opsInvolChart" role="img" aria-label="Involuntary exits by ops segment"></canvas></div>
+      </div>
     </div>
 
     <div class="section-head">
-      <div class="section-title">Regional attrition</div>
-      <div class="section-note">Estimated attrition % by region · ranked highest to lowest</div>
+      <div class="section-title">Exits by product</div>
+      <div class="section-note">Last 30 days · voluntary vs involuntary</div>
+    </div>
+    <div class="chart-grid-2">
+      <div class="chart-card">
+        <div class="cc-title" style="color:#1a3a5c;">Voluntary exits</div>
+        <div class="cc-sub">By product (Org Level 4)</div>
+        <div class="chart-wrap" style="height:180px;"><canvas id="prodVolChart" role="img" aria-label="Voluntary exits by product"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="cc-title" style="color:#c84b2f;">Involuntary exits</div>
+        <div class="cc-sub">By product (Org Level 4)</div>
+        <div class="chart-wrap" style="height:160px;"><canvas id="prodInvolChart" role="img" aria-label="Involuntary exits by product"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <div class="section-title">Termination reasons</div>
+      <div class="section-note">Last 30 days · voluntary vs involuntary</div>
+    </div>
+    <div class="chart-grid-2">
+      <div class="chart-card">
+        <div class="cc-title" style="color:#1a3a5c;">Voluntary reasons</div>
+        <div class="cc-sub">Why employees left voluntarily</div>
+        <div class="chart-wrap" style="height:180px;"><canvas id="reasonVolChart" role="img" aria-label="Voluntary termination reasons"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="cc-title" style="color:#c84b2f;">Involuntary reasons</div>
+        <div class="cc-sub">Why employees were exited</div>
+        <div class="chart-wrap" style="height:160px;"><canvas id="reasonInvolChart" role="img" aria-label="Involuntary termination reasons"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <div class="section-title">Attrition by ops segment</div>
+      <div class="section-note">Last 12 months exits ÷ active headcount · select segment · only shows cost centers/products with exits</div>
     </div>
     <div class="full-card">
-      <div id="regionAttrBars"></div>
+      <div class="tab-row" id="opsAttrTabs"></div>
+      <div class="chart-grid-2">
+        <div class="chart-card">
+          <div class="cc-title" id="opsAttrCCTitle">By cost center</div>
+          <div class="cc-sub">Active HC vs vol/invol exits last 12 months</div>
+          <div class="chart-wrap" style="height:280px;"><canvas id="opsAttrCCChart" role="img" aria-label="Attrition by cost center for selected ops segment"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="cc-title" id="opsAttrProdTitle">By product</div>
+          <div class="cc-sub">Active HC vs vol/invol exits last 12 months</div>
+          <div class="chart-wrap" style="height:280px;"><canvas id="opsAttrProdChart" role="img" aria-label="Attrition by product for selected ops segment"></canvas></div>
+        </div>
+      </div>
     </div>
 
     <div class="section-head">

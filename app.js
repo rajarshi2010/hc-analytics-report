@@ -21,33 +21,14 @@ const baseChart = {
 };
 
 // Country → Region classifier
-const CR = {
-  india:'Asia Pacific', pakistan:'Asia Pacific', bangladesh:'Asia Pacific', 'sri lanka':'Asia Pacific',
-  singapore:'Asia Pacific', malaysia:'Asia Pacific', indonesia:'Asia Pacific', philippines:'Asia Pacific',
-  thailand:'Asia Pacific', vietnam:'Asia Pacific', china:'Asia Pacific', japan:'Asia Pacific',
-  'south korea':'Asia Pacific', australia:'Asia Pacific', 'new zealand':'Asia Pacific', 'hong kong':'Asia Pacific',
-  taiwan:'Asia Pacific', myanmar:'Asia Pacific', cambodia:'Asia Pacific', laos:'Asia Pacific',
-  'united states':'North America', usa:'North America', us:'North America', canada:'North America', mexico:'North America',
-  'united kingdom':'Europe', uk:'Europe', england:'Europe', scotland:'Europe', wales:'Europe',
-  germany:'Europe', france:'Europe', netherlands:'Europe', spain:'Europe', italy:'Europe',
-  sweden:'Europe', norway:'Europe', denmark:'Europe', finland:'Europe', switzerland:'Europe',
-  belgium:'Europe', poland:'Europe', portugal:'Europe', austria:'Europe', ireland:'Europe',
-  czechia:'Europe', 'czech republic':'Europe', ukraine:'Europe', romania:'Europe', hungary:'Europe',
-  greece:'Europe', slovakia:'Europe', slovenia:'Europe', croatia:'Europe', bulgaria:'Europe',
-  serbia:'Europe', 'north macedonia':'Europe', albania:'Europe', estonia:'Europe', latvia:'Europe',
-  lithuania:'Europe', luxembourg:'Europe', malta:'Europe', iceland:'Europe', moldova:'Europe',
-  uae:'EMEA', 'united arab emirates':'EMEA', 'saudi arabia':'EMEA',
-  qatar:'EMEA', kuwait:'EMEA', bahrain:'EMEA',
-  oman:'EMEA', egypt:'EMEA', 'south africa':'EMEA',
-  nigeria:'EMEA', kenya:'EMEA', ghana:'EMEA',
-  israel:'EMEA', jordan:'EMEA', lebanon:'EMEA',
-  morocco:'EMEA', ethiopia:'EMEA', tanzania:'EMEA',
-  uganda:'EMEA', zimbabwe:'EMEA', zambia:'EMEA',
-  brazil:'Latin America', argentina:'Latin America', colombia:'Latin America', chile:'Latin America',
-  peru:'Latin America', venezuela:'Latin America', ecuador:'Latin America', bolivia:'Latin America',
-  paraguay:'Latin America', uruguay:'Latin America', 'costa rica':'Latin America', panama:'Latin America',
+const c2r = c => {
+  const v = (c||'').toLowerCase().trim();
+  if (v === 'india') return 'India';
+  if (['singapore','malaysia','indonesia','philippines','thailand','vietnam','china','japan','south korea','australia','new zealand','hong kong','taiwan','bangladesh','sri lanka','myanmar','cambodia'].includes(v)) return 'APAC';
+  if (['united states','usa','us','canada','mexico'].includes(v)) return 'North America';
+  if (['brazil','argentina','colombia','chile','peru','venezuela','ecuador','bolivia','paraguay','uruguay','costa rica','panama'].includes(v)) return 'Latin America';
+  return 'EMEA';
 };
-const c2r = c => CR[(c||'').toLowerCase().trim()] || 'Other';
 
 let charts = {};
 const dc = id => { if (charts[id]) { charts[id].destroy(); delete charts[id]; } };
@@ -101,8 +82,28 @@ function processFile(file) {
     r.readAsArrayBuffer(file);
   } else {
     r.onload = e => setTimeout(() => renderReport(parseHC(e.target.result, file.name)), 800);
-    r.readAsText(file);
+    r.readAsText(file, 'latin-1');
   }
+}
+
+// Proper CSV parser — handles quoted fields with commas inside
+function parseCSVLine(line, delim) {
+  if (delim === '\t') return line.split('\t').map(v => v.trim());
+  const result = [];
+  let cur = '', inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuote && line[i+1] === '"') { cur += '"'; i++; }
+      else inQuote = !inQuote;
+    } else if (ch === ',' && !inQuote) {
+      result.push(cur.trim()); cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  result.push(cur.trim());
+  return result;
 }
 
 function parseHC(text, filename) {
@@ -111,18 +112,18 @@ function parseHC(text, filename) {
   const HEADER_KEYWORDS = ['employee','gender','country','company','status','hire','salary','email','org','cost','segment','product','birth'];
   let headerLineIdx = 0;
   for (let i = 0; i < Math.min(10, lines.length); i++) {
-    const cells = lines[i].split(delim).map(c => c.trim().toLowerCase());
+    const cells = parseCSVLine(lines[i], delim).map(c => c.toLowerCase());
     const nonEmpty = cells.filter(c => c).length;
     const matches = HEADER_KEYWORDS.filter(k => cells.some(c => c.includes(k))).length;
     if (nonEmpty >= 5 && matches >= 3) { headerLineIdx = i; break; }
   }
-  const headers = lines[headerLineIdx].split(delim).map(h => h.trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''));
+  const headers = parseCSVLine(lines[headerLineIdx], delim).map(h => h.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''));
   const rows = [];
   for (let i = headerLineIdx + 1; i < lines.length; i++) {
     if (!lines[i].trim()) continue;
-    const vals = lines[i].split(delim);
+    const vals = parseCSVLine(lines[i], delim);
     const row = {};
-    headers.forEach((h, j) => row[h] = (vals[j]||'').trim());
+    headers.forEach((h, j) => row[h] = (vals[j] || '').trim());
     rows.push(row);
   }
   return processRows(rows, headers, filename);
@@ -166,7 +167,7 @@ function processRows(rows, headers, filename) {
     if (rd) { const d = new Date(rd); if (!isNaN(d)) r._tenureYears = (today - d) / (1000*60*60*24*365.25); }
   });
 
-  const activeRows = rows.filter(r => r._isActive);
+  const activeRows = rows.filter(r => r._isActive && r._org3 !== 'Packaging');
   const excludedCount = rows.length - activeRows.length;
   // Tag _company on allRows too so KPI company count works across all entities
   return { rows: activeRows, allRows: rows, excludedCount, filename, colOrg3, colOrg4, colCompany, colStatus, colTermType, colTermReason, colTermDate };
@@ -178,7 +179,7 @@ const sorted = (obj, desc=true) => Object.entries(obj).sort((a,b) => desc ? b[1]
 
 function estAttrition(activeRows, allRows) {
   const cutoff = new Date();
-  cutoff.setFullYear(cutoff.getFullYear() - 1);
+  cutoff.setDate(cutoff.getDate() - 30);
   const exits = allRows.filter(r => {
     if (!r._isActive && (r._termType||'').toLowerCase() === 'voluntary') {
       const d = new Date(r._termDate);
@@ -202,12 +203,22 @@ function renderReport(data) {
 
   const termedNote = colStatus && excludedCount > 0 ? `${excludedCount.toLocaleString()} non-active excluded` : '';
   document.getElementById('trendNote').textContent = `${total.toLocaleString()} employees`;
+  const cutoff30 = new Date();
+  cutoff30.setDate(cutoff30.getDate() - 30);
+  const last30Rows = data.allRows.filter(r => {
+    if (r._isActive) return false;
+    const d = new Date(r._termDate);
+    return !isNaN(d) && d >= cutoff30 && (r._termType||'').toLowerCase() !== 'transfer';
+  });
+  const last30Companies = new Set(last30Rows.map(r => r._company));
   const allCompanies = Object.keys(countBy(data.allRows,'_company'));
-  const activeCompanies = new Set(rows.map(r=>r._company));
-  const inactiveCompanies = allCompanies.filter(c => !activeCompanies.has(c));
+  // Use full active rows (not Packaging-filtered) for company presence check
+  const allActiveRows = data.allRows.filter(r => r._isActive);
+  const activeCompanies = new Set(allActiveRows.map(r=>r._company));
+  const inactiveCompanies = allCompanies.filter(c => !activeCompanies.has(c) && !last30Companies.has(c));
   document.getElementById('kpiStrip').innerHTML = [
     { label: 'Active entities', value: activeCompanies.size },
-    { label: 'Inactive entities', value: inactiveCompanies.length },
+    
     { label: 'Active headcount', value: total.toLocaleString() },
     { label: 'Voluntary attrition', value: attrPct != null ? attrPct + '%' : '—' },
   ].map(k => `<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.value}</div></div>`).join('');
@@ -314,21 +325,39 @@ function renderReport(data) {
     options: { ...baseChart, indexAxis:'y', scales: { x:{...baseChart.scales.x}, y:{...baseChart.scales.y, ticks:{color:tickC, font:{size:11, family:"'Segoe UI'"}}} } }
   });
 
-  // ── Attrition data from allRows (termed employees) ──
-  const termedRows = data.allRows.filter(r => !r._isActive);
-  const cutoff12m = new Date();
-  cutoff12m.setFullYear(cutoff12m.getFullYear() - 1);
+  // ── Attrition — last 30 days, excl transfers, excl Packaging ──
+  const termedRows = data.allRows.filter(r => !r._isActive && r._org3 !== 'Packaging');
+  const cutoff30b = new Date();
+  cutoff30b.setDate(cutoff30b.getDate() - 30);
   const termedLast12 = termedRows.filter(r => {
     if (!r._termDate) return false;
     const d = new Date(r._termDate);
-    return !isNaN(d) && d >= cutoff12m;
+    return !isNaN(d) && d >= cutoff30 && (r._termType||'').toLowerCase() !== 'transfer';
   });
+  const volRows    = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'voluntary');
+  const involRows  = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'involuntary');
+  const volCount   = volRows.length;
+  const involCount = involRows.length;
+  const totalTermed = volCount + involCount;
 
-  const volCount      = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'voluntary').length;
-  const involCount    = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'involuntary').length;
-  const totalTermed   = volCount + involCount;
+  document.getElementById('attrNote').textContent = `${totalTermed} exits (last 30 days) · ${volCount} voluntary · ${involCount} involuntary`;
 
-  document.getElementById('attrNote').textContent = `${totalTermed} exits (last 12 months) · ${volCount} voluntary · ${involCount} involuntary`;
+  const groupBy = (rows, key) => {
+    const m = {};
+    rows.forEach(r => { const v = r[key]||'Unknown'; m[v]=(m[v]||0)+1; });
+    return Object.entries(m).filter(([k])=>k!=='Unknown').sort((a,b)=>b[1]-a[1]);
+  };
+  const mkSepBar = (id, entries, isVol) => {
+    dc(id);
+    if (!entries.length) { const el=document.getElementById(id); if(el) el.parentElement.innerHTML='<p style="font-size:12px;color:var(--ink-3);font-style:italic;padding:8px 0">No exits in this category</p>'; return; }
+    const vC=[BLUE,BLUE_MID,BLUE_LIGHT,SLATE,STEEL];
+    const iC=[WARN,'#e07055','#e89a85','#f0bfb2'];
+    charts[id] = new Chart(document.getElementById(id), {
+      type:'bar',
+      data:{labels:entries.map(e=>e[0]),datasets:[{data:entries.map(e=>e[1]),backgroundColor:entries.map((_,i)=>(isVol?vC:iC)[i%(isVol?vC:iC).length]),borderRadius:4,barThickness:18}]},
+      options:{...baseChart,indexAxis:'y',scales:{x:{...baseChart.scales.x,ticks:{...baseChart.scales.x.ticks,stepSize:1}},y:{...baseChart.scales.y,ticks:{color:tickC,font:{size:11}}}}}
+    });
+  };
 
   // ── Voluntary vs Involuntary donut ──
   dc('attrSplitChart');
@@ -375,19 +404,45 @@ function renderReport(data) {
     }
   });
 
-  // ── Top termination reasons bar (excl. transfers) ──
-  const reasonMap = {};
-  termedLast12.filter(r => (r._termType||'').toLowerCase() !== 'transfer')
-    .forEach(r => { const v = r._termReason || 'Unknown'; reasonMap[v] = (reasonMap[v]||0)+1; });
-  const topReasons = sorted(reasonMap).filter(e=>e[0]!=='Unknown').slice(0,10);
-  dc('termReasonChart');
-  charts['termReasonChart'] = new Chart(document.getElementById('termReasonChart'), {
-    type: 'bar',
-    data: { labels: topReasons.map(e=>e[0]), datasets: [{ label:'Count', data: topReasons.map(e=>e[1]), backgroundColor: topReasons.map((_,i) => [BLUE,BLUE_MID,BLUE_LIGHT,SLATE,STEEL,BLUE,BLUE_MID,BLUE_LIGHT,SLATE,STEEL][i]), borderRadius:3 }] },
-    options: { ...baseChart, indexAxis:'y', scales: { x:{...baseChart.scales.x}, y:{...baseChart.scales.y, ticks:{color:tickC, font:{size:11, family:"'Segoe UI'"}}} } }
+  // ── Vol/Invol donut ──
+  dc('attrSplitChart');
+  charts['attrSplitChart'] = new Chart(document.getElementById('attrSplitChart'), {
+    type:'doughnut', data:{labels:['Involuntary','Voluntary'],datasets:[{data:[involCount,volCount],backgroundColor:[WARN,BLUE],borderWidth:3,borderColor:'#fff'}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'58%',
+      plugins:{legend:{display:true,position:'bottom',labels:{color:tickC,font:{size:12},padding:14,boxWidth:12,boxHeight:12}},
+        tooltip:{backgroundColor:'#0f0e0c',titleColor:'#f9f6f0',bodyColor:'#c8c5bb',callbacks:{label:ctx=>` ${ctx.label}: ${ctx.parsed} (${totalTermed?Math.round(ctx.parsed/totalTermed*100):0}%)`}}},
+      animation:{onComplete:function(){
+        const c=this.ctx,w=this.chartArea,cx=(w.left+w.right)/2,cy=(w.top+w.bottom)/2;
+        c.save();c.fillStyle='#0f0e0c';c.font='500 24px sans-serif';c.textAlign='center';c.textBaseline='middle';
+        c.fillText(totalTermed,cx,cy-10);c.fillStyle='#7a7870';c.font='400 11px sans-serif';c.fillText('exits',cx,cy+10);c.restore();
+        this.data.datasets.forEach((ds,di)=>{this.getDatasetMeta(di).data.forEach((arc,j)=>{
+          const val=ds.data[j];if(!val||!totalTermed)return;const pct=Math.round(val/totalTermed*100);if(pct<5)return;
+          const pos=arc.tooltipPosition();c.save();c.fillStyle='#fff';c.font='500 13px sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText(pct+'%',pos.x,pos.y);c.restore();
+        });});
+      }}}
   });
 
-  // ── Month on month chart (excl. transfers) ──
+  // ── Regional attrition bars ──
+  const regTermMap2 = {};
+  volRows.forEach(r => { regTermMap2[r._region]=(regTermMap2[r._region]||0)+1; });
+  const regAttrArr = regEntries.map(([reg,activeCount]) => ({
+    reg, activeCount, vc: regTermMap2[reg]||0,
+    pct: (activeCount+(regTermMap2[reg]||0))>0 ? Math.round((regTermMap2[reg]||0)/(activeCount+(regTermMap2[reg]||0))*100) : 0
+  })).sort((a,b)=>b.pct-a.pct);
+  const maxRegPct = Math.max(...regAttrArr.map(e=>e.pct),1);
+  document.getElementById('regionAttrBars').innerHTML = regAttrArr.map((e,i) =>
+    `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div style="font-size:12px;color:var(--ink-3);width:130px;flex-shrink:0;text-align:right">${e.reg}</div>
+      <div style="flex:1;background:#eee;border-radius:3px;height:20px;overflow:hidden">
+        <div style="width:${e.pct>0?Math.max(Math.round(e.pct/maxRegPct*100),3):2}%;height:100%;background:${[BLUE,BLUE_MID,BLUE_LIGHT,SLATE,STEEL,BLUE_PALE][i%6]};border-radius:3px;display:flex;align-items:center;padding-left:8px">
+          <span style="font-size:11px;font-weight:500;color:#fff">${e.pct>0?e.pct+'%':''}</span>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--ink-3);width:50px;text-align:right">${e.vc} exits</div>
+    </div>`
+  ).join('') + `<p style="font-size:11px;color:var(--ink-3);margin-top:8px">Vol exits ÷ (active + vol exits) · last 30 days</p>`;
+
+  // ── Month on month chart — all time, excl transfers & Packaging ──
   const momMap = {};
   termedRows.filter(r => (r._termType||'').toLowerCase() !== 'transfer').forEach(r => {
     if (!r._termDate) return;
@@ -413,68 +468,120 @@ function renderReport(data) {
     options: { ...baseChart, scales: { x:{...baseChart.scales.x, stacked:true, ticks:{...baseChart.scales.x.ticks, maxTicksLimit:12, autoSkip:true, maxRotation:45}}, y:{...baseChart.scales.y, stacked:true} } }
   });
 
-  // ── Terminations by Cost Center stacked bar (excl. transfers) ──
-  const ccTermMap = {};
-  termedLast12.filter(r => (r._termType||'').toLowerCase() !== 'transfer').forEach(r => {
-    const cc = r._org2||'Unknown'; const t = r._termType||'Unknown';
-    if (!ccTermMap[cc]) ccTermMap[cc] = {Voluntary:0,Involuntary:0};
-    if (ccTermMap[cc][t]!==undefined) ccTermMap[cc][t]++;
+  // ── Exit breakdowns — cost center ──
+  mkSepBar('ccVolChart',   groupBy(volRows,   '_org2'), true);
+  mkSepBar('ccInvolChart', groupBy(involRows, '_org2'), false);
+
+  // ── Exit breakdowns — ops segment ──
+  mkSepBar('opsVolChart',   groupBy(volRows,   '_org3'), true);
+  mkSepBar('opsInvolChart', groupBy(involRows, '_org3'), false);
+
+  // ── Exit breakdowns — product ──
+  mkSepBar('prodVolChart',   groupBy(volRows,   '_org4'), true);
+  mkSepBar('prodInvolChart', groupBy(involRows, '_org4'), false);
+
+  // ── Termination reasons — separate ──
+  mkSepBar('reasonVolChart',   groupBy(volRows,   '_termReason'), true);
+  mkSepBar('reasonInvolChart', groupBy(involRows, '_termReason'), false);
+
+  // ── Attrition by ops segment — tabbed — last 12 months ──
+  const opsAttrData = {};
+  const cutoff12months = new Date();
+  cutoff12months.setFullYear(cutoff12months.getFullYear() - 1);
+  const termed12m = termedRows.filter(r => {
+    if (!r._termDate) return false;
+    const d = new Date(r._termDate);
+    return !isNaN(d) && d >= cutoff12months && (r._termType||'').toLowerCase() !== 'transfer';
   });
-  const ccTermLabels = Object.keys(ccTermMap).sort();
-  dc('attrCCChart');
-  charts['attrCCChart'] = new Chart(document.getElementById('attrCCChart'), {
-    type: 'bar',
-    data: {
-      labels: ccTermLabels,
-      datasets: [
-        { label:'Involuntary', data: ccTermLabels.map(c=>ccTermMap[c].Involuntary), backgroundColor: WARN, borderRadius:3, stack:'s' },
-        { label:'Voluntary',   data: ccTermLabels.map(c=>ccTermMap[c].Voluntary),   backgroundColor: BLUE, borderRadius:3, stack:'s' },
-      ]
-    },
-    options: { ...baseChart, indexAxis:'y', scales: { x:{...baseChart.scales.x, stacked:true}, y:{...baseChart.scales.y, stacked:true, ticks:{color:tickC, font:{size:11, family:"'Segoe UI'"}}} } }
+  const vol12m   = termed12m.filter(r => (r._termType||'').toLowerCase() === 'voluntary');
+  const invol12m = termed12m.filter(r => (r._termType||'').toLowerCase() === 'involuntary');
+
+  const opsSegments = [...new Set(rows.map(r => r._org3).filter(s => s && s !== 'Unknown'))].sort();
+
+  opsSegments.forEach(seg => {
+    const segActive  = rows.filter(r => r._org3 === seg);
+    const segVol     = vol12m.filter(r => r._org3 === seg);
+    const segInvol   = invol12m.filter(r => r._org3 === seg);
+
+    const byCC = {};
+    segActive.forEach(r => { if (!byCC[r._org2]) byCC[r._org2]={active:0,vol:0,invol:0}; byCC[r._org2].active++; });
+    segVol.forEach(r => { if (!byCC[r._org2]) byCC[r._org2]={active:0,vol:0,invol:0}; byCC[r._org2].vol++; });
+    segInvol.forEach(r => { if (!byCC[r._org2]) byCC[r._org2]={active:0,vol:0,invol:0}; byCC[r._org2].invol++; });
+
+    const byProd = {};
+    segActive.forEach(r => { if (!byProd[r._org4]) byProd[r._org4]={active:0,vol:0,invol:0}; byProd[r._org4].active++; });
+    segVol.forEach(r => { if (!byProd[r._org4]) byProd[r._org4]={active:0,vol:0,invol:0}; byProd[r._org4].vol++; });
+    segInvol.forEach(r => { if (!byProd[r._org4]) byProd[r._org4]={active:0,vol:0,invol:0}; byProd[r._org4].invol++; });
+
+    opsAttrData[seg] = { cc: byCC, prod: byProd, active: segActive.length, vol: segVol.length, invol: segInvol.length };
   });
 
-  // ── Terminations by Product stacked bar (excl. transfers, top 15) ──
-  const prodTermMap = {};
-  termedLast12.filter(r => (r._termType||'').toLowerCase() !== 'transfer').forEach(r => {
-    const p = r._org4||'Unknown'; const t = r._termType||'Unknown';
-    if (!prodTermMap[p]) prodTermMap[p] = {Voluntary:0,Involuntary:0,_total:0};
-    if (prodTermMap[p][t]!==undefined) prodTermMap[p][t]++;
-    prodTermMap[p]._total++;
-  });
-  const prodTermLabels = Object.entries(prodTermMap).filter(([k])=>k!=='Unknown').sort((a,b)=>b[1]._total-a[1]._total).slice(0,15).map(e=>e[0]);
-  dc('attrProdChart');
-  charts['attrProdChart'] = new Chart(document.getElementById('attrProdChart'), {
-    type: 'bar',
-    data: {
-      labels: prodTermLabels,
-      datasets: [
-        { label:'Involuntary', data: prodTermLabels.map(p=>prodTermMap[p].Involuntary), backgroundColor: WARN, borderRadius:3, stack:'s' },
-        { label:'Voluntary',   data: prodTermLabels.map(p=>prodTermMap[p].Voluntary),   backgroundColor: BLUE, borderRadius:3, stack:'s' },
-      ]
-    },
-    options: { ...baseChart, indexAxis:'y', scales: { x:{...baseChart.scales.x, stacked:true}, y:{...baseChart.scales.y, stacked:true, ticks:{color:tickC, font:{size:11, family:"'Segoe UI'"}}} } }
-  });
+  function renderOpsAttrChart(seg) {
+    const d = opsAttrData[seg];
+    if (!d) return;
+    document.getElementById('opsAttrCCTitle').textContent = `${seg} — by cost center`;
+    document.getElementById('opsAttrProdTitle').textContent = `${seg} — by product`;
 
-  // ── Regional attrition bars (actual termed counts per region) ──
-  const regTermMap = {};
-  termedLast12.filter(r => (r._termType||'').toLowerCase() === 'voluntary').forEach(r => {
-    regTermMap[r._region] = (regTermMap[r._region]||0)+1;
+    const buildAttrPct = (map, canvasId) => {
+      dc(canvasId);
+      // Only show rows with at least one exit (vol or invol), sorted by vol attrition % desc
+      const labels = Object.keys(map).filter(k => k !== 'Unknown' && map[k].active > 0 && (map[k].vol > 0 || map[k].invol > 0))
+        .sort((a,b) => {
+          const pctA = map[a].vol / (map[a].active + map[a].vol) * 100;
+          const pctB = map[b].vol / (map[b].active + map[b].vol) * 100;
+          return pctB - pctA;
+        });
+      if (!labels.length) return;
+      const volPct   = labels.map(l => { const r=map[l]; return r.active+r.vol > 0 ? Math.round(r.vol/(r.active+r.vol)*100) : 0; });
+      const involPct = labels.map(l => { const r=map[l]; return r.active+r.invol > 0 ? Math.round(r.invol/(r.active+r.invol)*100) : 0; });
+      const h = Math.max(labels.length * 44 + 80, 180);
+      document.getElementById(canvasId).parentElement.style.height = h + 'px';
+      charts[canvasId] = new Chart(document.getElementById(canvasId), {
+        type: 'bar',
+        data: { labels, datasets: [
+          { label: 'Voluntary attrition %', data: volPct, backgroundColor: BLUE, borderRadius: 3 },
+          { label: 'Involuntary attrition %', data: involPct, backgroundColor: WARN, borderRadius: 3 },
+        ]},
+        options: { ...baseChart, indexAxis: 'y',
+          plugins: { ...baseChart.plugins,
+            legend: { display: true, position: 'top', labels: { color: tickC, font: { size: 11 }, padding: 12, boxWidth: 10, boxHeight: 10 } },
+            tooltip: { backgroundColor:'#0f0e0c', titleColor:'#f9f6f0', bodyColor:'#c8c5bb',
+              callbacks: { label: ctx => {
+                const lbl = ctx.dataset.label;
+                const key = labels[ctx.dataIndex];
+                const r = map[key];
+                const exits = lbl.includes('Vol') ? r.vol : r.invol;
+                return ` ${lbl}: ${ctx.parsed.x}% (${exits} exits last 12m / ${r.active} active)`;
+              }}
+            }
+          },
+          scales: {
+            x: { ...baseChart.scales.x, ticks: { ...baseChart.scales.x.ticks, callback: v => v + '%' }, max: Math.max(...volPct, ...involPct, 5) + 2 },
+            y: { ...baseChart.scales.y, ticks: { color: tickC, font: { size: 10 } } }
+          }
+        }
+      });
+    };
+
+    buildAttrPct(d.cc,   'opsAttrCCChart');
+    buildAttrPct(d.prod, 'opsAttrProdChart');
+    document.querySelectorAll('#opsAttrTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.seg === seg));
+  }
+
+  // Build tabs
+  const tabRow = document.getElementById('opsAttrTabs');
+  tabRow.innerHTML = '';
+  opsSegments.forEach((seg, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'tab' + (i === 0 ? ' active' : '');
+    btn.textContent = seg;
+    btn.dataset.seg = seg;
+    btn.onclick = () => renderOpsAttrChart(seg);
+    tabRow.appendChild(btn);
   });
-  const barColors = [BLUE, BLUE_MID, BLUE_LIGHT, SLATE, STEEL, BLUE_PALE, MUTED];
-  const regAttrArr = regEntries.map(([reg, activeCount]) => ({
-    reg, activeCount, termedCount2: regTermMap[reg]||0,
-    pct: (activeCount + (regTermMap[reg]||0)) > 0 ? Math.round((regTermMap[reg]||0)/(activeCount + (regTermMap[reg]||0))*100) : 0
-  })).sort((a,b)=>b.pct-a.pct);
-  const maxRegPct = Math.max(...regAttrArr.map(e=>e.pct), 1);
-  document.getElementById('regionAttrBars').innerHTML = regAttrArr.map((e,i) => {
-    const barW = Math.round(e.pct/maxRegPct*100);
-    return `<div class="hbar-row">
-      <div class="hbar-label">${e.reg}</div>
-      <div class="hbar-track"><div class="hbar-fill" style="width:${barW}%;background:${barColors[i%barColors.length]};"><span>${e.pct}%</span></div></div>
-      <div class="hbar-pct" style="width:110px;font-size:11px;">${e.termedCount2} exits · ${e.activeCount} active</div>
-    </div>`;
-  }).join('') + `<p style="font-size:11px;color:var(--ink-3);margin-top:10px;">Attrition % = voluntary exits (last 12 months) ÷ (active + voluntary exits last 12 months). Involuntary exits and transfers excluded from attrition %.</p>`;
+  if (opsSegments.length) renderOpsAttrChart(opsSegments[0]);
+
+
 
   // ── Tenure chart ──
   const bands = {'< 1 yr':0,'1–2 yr':0,'2–4 yr':0,'4–7 yr':0,'7–10 yr':0,'10+ yr':0};
@@ -489,6 +596,24 @@ function renderReport(data) {
     type: 'bar',
     data: { labels: Object.keys(bands), datasets: [{ label:'Employees', data: Object.values(bands), backgroundColor: Object.keys(bands).map((_,i)=>PALETTE[i%PALETTE.length]), borderRadius:4 }] },
     options: { ...baseChart }
+  });
+
+  // ── Build term maps for summary tables ──
+  const ccTermMap = {};
+  termedLast12.forEach(r => {
+    const cc = r._org2||'Unknown';
+    if (!ccTermMap[cc]) ccTermMap[cc] = {Voluntary:0, Involuntary:0};
+    const t = (r._termType||'').toLowerCase();
+    if (t === 'voluntary') ccTermMap[cc].Voluntary++;
+    else if (t === 'involuntary') ccTermMap[cc].Involuntary++;
+  });
+  const prodTermMap = {};
+  termedLast12.forEach(r => {
+    const p = r._org4||'Unknown';
+    if (!prodTermMap[p]) prodTermMap[p] = {Voluntary:0, Involuntary:0, _total:0};
+    const t = (r._termType||'').toLowerCase();
+    if (t === 'voluntary') { prodTermMap[p].Voluntary++; prodTermMap[p]._total++; }
+    else if (t === 'involuntary') { prodTermMap[p].Involuntary++; prodTermMap[p]._total++; }
   });
 
   // ── Cost Center table (with vol/invol/transfer) ──
