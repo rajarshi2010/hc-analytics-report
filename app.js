@@ -147,11 +147,16 @@ function processRows(rows, headers, filename) {
   const colTermDate  = find(['termination_date','term_date','exit_date','last_day']);
 
   const ACTIVE_VALUES = new Set(['active','a','1','yes','leave of absence','loa','leave','on leave','on loa']);
+  const colEmpType = find(['employee_type','emp_type','worker_type','employment_type']);
+  const VALID_EMP_TYPES = new Set(['regular','peo']);
 
   const today = new Date();
   rows.forEach(r => {
     const statusVal = (colStatus && r[colStatus] || '').toLowerCase().trim();
-    r._isActive = !colStatus || ACTIVE_VALUES.has(statusVal);
+    const empTypeVal = (colEmpType && r[colEmpType] || '').toLowerCase().trim();
+    const validEmpType = !colEmpType || VALID_EMP_TYPES.has(empTypeVal);
+    r._isActive = (!colStatus || ACTIVE_VALUES.has(statusVal)) && validEmpType;
+    r._isEligible = validEmpType; // flag for termed rows too
     r._termType   = (colTermType   && r[colTermType])   || null;
     r._termReason = (colTermReason && r[colTermReason]) || null;
     r._termDate   = (colTermDate   && r[colTermDate])   || null;
@@ -188,10 +193,10 @@ function estAttrition(activeRows, allRows) {
     return false;
   }).length;
   const total = activeRows.length + exits;
-  return total > 0 ? Math.round(exits/total*100) : null;
+  return total > 0 ? parseFloat((exits/total*100).toFixed(2)) : null;
 }
 
-async function renderReport(data) {
+function renderReport(data) {
   const { rows, excludedCount, filename, colOrg3, colOrg4, colStatus } = data;
   const total = rows.length;
   const withTenure = rows.filter(r => r._tenureYears != null);
@@ -203,12 +208,11 @@ async function renderReport(data) {
 
   const termedNote = colStatus && excludedCount > 0 ? `${excludedCount.toLocaleString()} non-active excluded` : '';
   document.getElementById('trendNote').textContent = `${total.toLocaleString()} employees`;
-  const cutoff30 = new Date();
-  cutoff30.setDate(cutoff30.getDate() - 30);
+  const ytdStartCo = new Date(new Date().getFullYear(), 0, 1);
   const last30Rows = data.allRows.filter(r => {
     if (r._isActive) return false;
     const d = new Date(r._termDate);
-    return !isNaN(d) && d >= cutoff30 && (r._termType||'').toLowerCase() !== 'transfer';
+    return !isNaN(d) && d >= ytdStartCo && (r._termType||'').toLowerCase() !== 'transfer';
   });
   const last30Companies = new Set(last30Rows.map(r => r._company));
   const allCompanies = Object.keys(countBy(data.allRows,'_company'));
@@ -220,7 +224,7 @@ async function renderReport(data) {
     { label: 'Active entities', value: activeCompanies.size },
     
     { label: 'Active headcount', value: total.toLocaleString() },
-    { label: 'Voluntary attrition', value: attrPct != null ? attrPct + '%' : '—' },
+    { label: 'Voluntary attrition (YTD)', value: attrPct != null ? attrPct.toFixed(2) + '%' : '—' },
   ].map(k => `<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.value}</div></div>`).join('');
 
   // narrative called after attrition data is built below
@@ -274,21 +278,39 @@ async function renderReport(data) {
       }}
     }
   });
-  // ── HC Trend ──
+  // ── HC Trend — monthly new hires last 12 months, last 6 months highlighted ──
   const hbm = {};
+  const twelveMonthsAgo = new Date(); twelveMonthsAgo.setFullYear(twelveMonthsAgo.getFullYear()-1);
+  const sixMonthsAgo = new Date(); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth()-6);
   rows.filter(r=>r._tenureYears!=null).forEach(r => {
     const d = new Date(Date.now() - r._tenureYears*365.25*24*60*60*1000);
+    if (d < twelveMonthsAgo) return; // last 12 months only
     const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
     hbm[ym] = (hbm[ym]||0)+1;
   });
   const sMonths = Object.keys(hbm).sort();
-  let cum = 0;
+  const fmtMo = m => { const [y,mo]=m.split('-'); return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo-1]} ${y.slice(2)}`; };
+  // Last 6 months get darker blue, earlier months get lighter
+  const barBgColors = sMonths.map(m => {
+    const d = new Date(m+'-01');
+    return d >= sixMonthsAgo ? BLUE : BLUE_PALE;
+  });
   dc('hcTrendChart');
   charts['hcTrendChart'] = new Chart(document.getElementById('hcTrendChart'), {
-    type: 'line',
-    data: { labels: sMonths.map(m => { const [y,mo]=m.split('-'); return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo-1]} ${y.slice(2)}`; }),
-            datasets: [{ label:'Headcount', data: sMonths.map(m=>{cum+=hbm[m];return cum;}), borderColor: BLUE, backgroundColor:'rgba(26,58,92,0.07)', fill:true, tension:0.4, pointRadius:0, borderWidth:2 }] },
-    options: { ...baseChart, scales: { ...baseChart.scales, x: { ...baseChart.scales.x, ticks:{...baseChart.scales.x.ticks, maxTicksLimit:8, autoSkip:true} } } }
+    type: 'bar',
+    data: { labels: sMonths.map(fmtMo),
+            datasets: [{ label:'New hires', data: sMonths.map(m=>hbm[m]||0), backgroundColor: barBgColors, borderRadius: 4 }] },
+    options: { ...baseChart,
+      plugins: { ...baseChart.plugins,
+        legend: { display: true, position: 'top', labels: { color: tickC, font: { size: 11 }, padding: 12, boxWidth: 10, boxHeight: 10,
+          generateLabels: () => [
+            { text: 'Last 6 months', fillStyle: BLUE, strokeStyle: BLUE },
+            { text: 'Earlier', fillStyle: BLUE_PALE, strokeStyle: BLUE_PALE }
+          ]
+        }}
+      },
+      scales: { ...baseChart.scales, x: { ...baseChart.scales.x, ticks: { ...baseChart.scales.x.ticks, maxTicksLimit: 12, autoSkip: false, maxRotation: 45 } } }
+    }
   });
 
   // ── Cost Center chart (Org Level 2 actual values) ──
@@ -326,7 +348,7 @@ async function renderReport(data) {
   });
 
   // ── Attrition — last 30 days, excl transfers, excl Packaging ──
-  const termedRows = data.allRows.filter(r => !r._isActive && r._org3 !== 'Packaging');
+  const termedRows = data.allRows.filter(r => !r._isActive && r._org3 !== 'Packaging' && r._isEligible);
   const cutoff30b = new Date();
   cutoff30b.setDate(cutoff30b.getDate() - 30);
   const termedLast12 = termedRows.filter(r => {
@@ -340,7 +362,7 @@ async function renderReport(data) {
   const involCount = involRows.length;
   const totalTermed = volCount + involCount;
 
-  document.getElementById('attrNote').textContent = `${totalTermed} exits (last 30 days) · ${volCount} voluntary · ${involCount} involuntary`;
+  document.getElementById('attrNote').textContent = `${totalTermed} exits (YTD Jan–${new Date().toLocaleString('default',{month:'short'})}) · ${volCount} voluntary · ${involCount} involuntary`;
 
   // ── AI narrative — called here so all attrition vars are in scope ──
   buildNarrative(rows, total, attrPct, volCount, involCount, termedLast12, termedRows, data.allRows);
@@ -535,8 +557,8 @@ async function renderReport(data) {
           return pctB - pctA;
         });
       if (!labels.length) return;
-      const volPct   = labels.map(l => { const r=map[l]; return r.active+r.vol > 0 ? Math.round(r.vol/(r.active+r.vol)*100) : 0; });
-      const involPct = labels.map(l => { const r=map[l]; return r.active+r.invol > 0 ? Math.round(r.invol/(r.active+r.invol)*100) : 0; });
+      const volPct   = labels.map(l => { const r=map[l]; return r.active+r.vol > 0 ? parseFloat((r.vol/(r.active+r.vol)*100).toFixed(2)) : 0; });
+      const involPct = labels.map(l => { const r=map[l]; return r.active+r.invol > 0 ? parseFloat((r.invol/(r.active+r.invol)*100).toFixed(2)) : 0; });
       const h = Math.max(labels.length * 44 + 80, 180);
       document.getElementById(canvasId).parentElement.style.height = h + 'px';
       charts[canvasId] = new Chart(document.getElementById(canvasId), {
@@ -554,7 +576,7 @@ async function renderReport(data) {
                 const key = labels[ctx.dataIndex];
                 const r = map[key];
                 const exits = lbl.includes('Vol') ? r.vol : r.invol;
-                return ` ${lbl}: ${ctx.parsed.x}% (${exits} exits last 12m / ${r.active} active)`;
+                return ` ${lbl}: ${ctx.parsed.x.toFixed(2)}% (${exits} exits YTD / ${r.active} active)`;
               }}
             }
           },
@@ -658,113 +680,127 @@ async function renderReport(data) {
   document.getElementById('report-screen').style.display = 'block';
 }
 
-async function buildNarrative(rows, total, attrPct, volCount, involCount, termedLast12, termedRows, allRows) {
-  document.getElementById('aiText').innerHTML = '<em style="color:var(--ink-3)">Generating insights with Claude AI...</em>';
+function buildNarrative(rows, total, attrPct, volCount, involCount, termedYTD, termedRows, allRows) {
+  const insights = [];
+  const flags = [];
 
-  // Build rich data snapshot for Claude to analyse
+  // ── Core metrics ──
   const regMap   = countBy(rows,'_region');
   const ccMap    = countBy(rows,'_org2');
   const opsMap   = countBy(rows,'_org3');
-  const gMap     = countBy(rows,'_gender');
   const withT    = rows.filter(r=>r._tenureYears!=null);
+  const avgTen   = withT.length ? (withT.reduce((s,r)=>s+r._tenureYears,0)/withT.length) : 0;
   const newJ     = withT.filter(r=>r._tenureYears<1).length;
-  const mid      = withT.filter(r=>r._tenureYears>=2&&r._tenureYears<5).length;
+  const newJPct  = total > 0 ? (newJ/total*100) : 0;
   const longT    = withT.filter(r=>r._tenureYears>=5).length;
-  const avgTen   = withT.length ? (withT.reduce((s,r)=>s+r._tenureYears,0)/withT.length).toFixed(1) : null;
+  const longTPct = total > 0 ? (longT/total*100) : 0;
+  const gMap     = countBy(rows,'_gender');
+  const gList    = sorted(gMap);
 
-  // Attrition by region (last 30 days vol)
-  const regVolMap = {};
-  termedLast12.filter(r=>(r._termType||'').toLowerCase()==='voluntary').forEach(r=>{ regVolMap[r._region]=(regVolMap[r._region]||0)+1; });
-  const regAttr = sorted(regMap).map(([r,a])=>({ region:r, active:a, volExits:regVolMap[r]||0, pct: a>0?Math.round((regVolMap[r]||0)/(a+(regVolMap[r]||0))*100):0 }));
-
-  // Attrition by cost center (last 30d)
-  const ccVolMap={}, ccInvolMap={};
-  termedLast12.filter(r=>(r._termType||'').toLowerCase()==='voluntary').forEach(r=>{ccVolMap[r._org2]=(ccVolMap[r._org2]||0)+1;});
-  termedLast12.filter(r=>(r._termType||'').toLowerCase()==='involuntary').forEach(r=>{ccInvolMap[r._org2]=(ccInvolMap[r._org2]||0)+1;});
-  const ccAttr = sorted(ccMap).map(([cc,a])=>({ cc, active:a, vol:ccVolMap[cc]||0, invol:ccInvolMap[cc]||0, volPct:Math.round((ccVolMap[cc]||0)/(a+(ccVolMap[cc]||0))*100) }));
-
-  // MoM trend — last 6 months
-  const momMap={};
-  termedRows.filter(r=>(r._termType||'').toLowerCase()!=='transfer').forEach(r=>{
-    if(!r._termDate) return; const d=new Date(r._termDate); if(isNaN(d)) return;
-    const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    if(!momMap[ym]) momMap[ym]={vol:0,invol:0};
-    const t=(r._termType||'').toLowerCase();
-    if(t==='voluntary') momMap[ym].vol++; else if(t==='involuntary') momMap[ym].invol++;
+  // ── YTD attrition by segment ──
+  const volByCC = {}, involByCC = {}, volByOps = {}, involByOps = {};
+  termedYTD.filter(r=>(r._termType||'').toLowerCase()==='voluntary').forEach(r=>{
+    volByCC[r._org2]=(volByCC[r._org2]||0)+1;
+    volByOps[r._org3]=(volByOps[r._org3]||0)+1;
   });
-  const last6m = Object.keys(momMap).sort().slice(-6).map(m=>({month:m,...momMap[m]}));
-
-  // Top vol reasons
-  const reasonMap={};
-  termedLast12.filter(r=>(r._termType||'').toLowerCase()==='voluntary').forEach(r=>{const v=r._termReason||'Unknown';reasonMap[v]=(reasonMap[v]||0)+1;});
-  const topReasons = sorted(reasonMap).slice(0,5);
-
-  // Ops segments
-  const opsAttr = sorted(opsMap).map(([seg,a])=>{
-    const sv=termedLast12.filter(r=>r._org3===seg&&(r._termType||'').toLowerCase()==='voluntary').length;
-    const iv=termedLast12.filter(r=>r._org3===seg&&(r._termType||'').toLowerCase()==='involuntary').length;
-    return { seg, active:a, vol:sv, invol:iv, volPct:Math.round(sv/(a+sv)*100||0) };
+  termedYTD.filter(r=>(r._termType||'').toLowerCase()==='involuntary').forEach(r=>{
+    involByCC[r._org2]=(involByCC[r._org2]||0)+1;
+    involByOps[r._org3]=(involByOps[r._org3]||0)+1;
   });
 
-  const dataPayload = {
-    reportDate: new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}),
-    totalActive: total,
-    activeEntities: [...new Set(rows.map(r=>r._company))].length,
-    avgTenureYears: avgTen,
-    tenureBreakdown: { under1yr: newJ, mid2to5yr: mid, over5yr: longT },
-    voluntaryAttritionPct30d: attrPct,
-    last30dExits: { voluntary: volCount, involuntary: involCount },
-    genderSplit: Object.fromEntries(sorted(gMap).map(([g,c])=>[g, Math.round(c/total*100)+'%'])),
-    regionBreakdown: regAttr,
-    costCenterBreakdown: ccAttr.slice(0,10),
-    opsSegmentBreakdown: opsAttr,
-    last6MonthTrend: last6m,
-    topVoluntaryReasons: topReasons,
-  };
+  // ── Compute attrition rates per CC ──
+  const ccAttrRates = Object.entries(ccMap).map(([cc, active]) => {
+    const vol = volByCC[cc]||0;
+    const invol = involByCC[cc]||0;
+    const volPct = (active+vol) > 0 ? (vol/(active+vol)*100) : 0;
+    const involPct = (active+invol) > 0 ? (invol/(active+invol)*100) : 0;
+    return { cc, active, vol, invol, volPct, involPct };
+  }).filter(d => d.active >= 5); // ignore tiny teams
 
-  const prompt = `You are an elite HR analytics advisor preparing a brief executive summary for senior leadership. 
-Analyse this headcount and attrition data and write 3-4 punchy sentences that surface insights leadership would typically MISS — patterns, risks, anomalies, or trends hiding in the numbers. 
-Do NOT just restate the obvious numbers. Focus on:
-- Unusual concentrations of attrition in specific cost centers, regions, or tenure bands
-- Warning signals (e.g. high % of new joiners suggesting future attrition risk, involuntary spike in a specific segment)
-- Positive signals worth calling out
-- Any pattern that warrants immediate leadership attention
+  const highVolCC = ccAttrRates.filter(d => d.volPct >= 3).sort((a,b)=>b.volPct-a.volPct);
+  const highInvolCC = ccAttrRates.filter(d => d.involPct >= 3).sort((a,b)=>b.involPct-a.involPct);
 
-Use plain English. Be direct. Bold the most important 2-3 findings. No bullet points — flowing sentences only.
-Keep it under 80 words total.
+  // ── Ops segment rates ──
+  const opsAttrRates = Object.entries(opsMap).map(([seg, active]) => {
+    const vol = volByOps[seg]||0;
+    const invol = involByOps[seg]||0;
+    const volPct = (active+vol) > 0 ? (vol/(active+vol)*100) : 0;
+    const involPct = (active+invol) > 0 ? (invol/(active+invol)*100) : 0;
+    return { seg, active, vol, invol, volPct, involPct };
+  });
+  const highVolOps = [...opsAttrRates].sort((a,b)=>b.volPct-a.volPct)[0];
+  const highInvolOps = [...opsAttrRates].sort((a,b)=>b.involPct-a.involPct)[0];
 
-Data (as of ${dataPayload.reportDate}):
-${JSON.stringify(dataPayload, null, 2)}`;
+  // ── MoM trend — last 3 months vs prior 3 ──
+  const momMap = {};
+  termedRows.filter(r=>(r._termType||'').toLowerCase()==='voluntary').forEach(r=>{
+    if(!r._termDate) return;
+    const d = new Date(r._termDate); if(isNaN(d)) return;
+    const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    momMap[ym] = (momMap[ym]||0)+1;
+  });
+  const allMoms = Object.keys(momMap).sort();
+  const last3 = allMoms.slice(-3).reduce((s,m)=>s+(momMap[m]||0),0);
+  const prior3 = allMoms.slice(-6,-3).reduce((s,m)=>s+(momMap[m]||0),0);
+  const trendDir = last3 > prior3*1.3 ? 'accelerating' : last3 < prior3*0.7 ? 'decelerating' : 'stable';
 
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 300,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
-    const data = await response.json();
-    const text = data.content?.[0]?.text || '';
-    // Convert **bold** markdown to HTML
-    const html = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    document.getElementById('aiText').innerHTML = html;
-  } catch(e) {
-    // Fallback to template if API fails
-    const regMap2 = countBy(rows,'_region');
-    const topReg = sorted(regMap2)[0];
-    const ccMap2 = countBy(rows,'_org2');
-    const topCC = sorted(ccMap2)[0];
-    let n = `The workforce stands at <strong>${total.toLocaleString()} employees</strong>.`;
-    if (topReg) n += ` <strong>${topReg[0]}</strong> is the largest region (${Math.round(topReg[1]/total*100)}%).`;
-    if (topCC) n += ` <strong>${topCC[0]}</strong> leads headcount at ${topCC[1].toLocaleString()}.`;
-    if (attrPct != null) n += ` Voluntary attrition stands at <strong>${attrPct}%</strong>.`;
-    document.getElementById('aiText').innerHTML = n;
+  // ── Build insights ──
+  // Opening: workforce size + composition
+  const topReg = sorted(regMap)[0];
+  const topCC = sorted(ccMap)[0];
+  insights.push(`The workforce stands at <strong>${total.toLocaleString()} active employees</strong> (Regular & PEO, excl. Packaging) with <strong>${attrPct !== null ? attrPct.toFixed(2)+'%' : '—'} voluntary attrition YTD</strong> — ${volCount} voluntary and ${involCount} involuntary exits since January 1.`);
+
+  // Insight 1: Attrition concentration
+  if (highVolCC.length > 0) {
+    const top = highVolCC[0];
+    if (top.volPct >= 5) {
+      flags.push(`<strong>${top.cc}</strong> has the highest voluntary attrition at <strong>${top.volPct.toFixed(1)}%</strong> YTD (${top.vol} exits from ${top.active} active) — disproportionate given it represents ${Math.round(top.active/total*100)}% of headcount.`);
+    }
   }
-}
 
+  // Insight 2: Involuntary spike
+  if (highInvolCC.length > 0) {
+    const top = highInvolCC[0];
+    if (top.involPct >= 3) {
+      flags.push(`Involuntary exits are concentrated in <strong>${top.cc}</strong> (${top.invol} exits, ${top.involPct.toFixed(1)}% rate) — worth reviewing if this reflects a structural reduction or a performance management pattern.`);
+    }
+  }
+
+  // Insight 3: Tenure risk
+  if (newJPct >= 20) {
+    flags.push(`<strong>${Math.round(newJPct)}% of employees have under 1 year of tenure</strong> — a significant cohort still in the critical engagement window. If voluntary attrition continues YTD, this group is the most at-risk.`);
+  } else if (longTPct >= 35) {
+    flags.push(`<strong>${Math.round(longTPct)}% of the workforce has 5+ years of tenure</strong> — a retention signal, but also a succession risk if this cohort approaches retirement age.`);
+  }
+
+  // Insight 4: Ops segment with highest vol attrition
+  if (highVolOps && highVolOps.volPct >= 3) {
+    flags.push(`Within ops segments, <strong>${highVolOps.seg}</strong> shows the highest voluntary attrition at <strong>${highVolOps.volPct.toFixed(1)}%</strong> (${highVolOps.vol} exits YTD). ${highInvolOps && highInvolOps.seg !== highVolOps.seg && highInvolOps.involPct >= 2 ? `Separately, <strong>${highInvolOps.seg}</strong> leads on involuntary exits at ${highInvolOps.involPct.toFixed(1)}%.` : ''}`);
+  }
+
+  // Insight 5: Trend direction
+  if (prior3 > 0) {
+    if (trendDir === 'accelerating') {
+      flags.push(`Voluntary exits are <strong>accelerating</strong> — the last 3 months recorded ${last3} exits vs ${prior3} in the prior 3 months, a ${Math.round((last3-prior3)/prior3*100)}% increase. This warrants urgent attention.`);
+    } else if (trendDir === 'decelerating') {
+      flags.push(`Voluntary exits are <strong>decelerating</strong> — ${last3} exits in the last 3 months vs ${prior3} prior, suggesting retention measures may be taking effect.`);
+    }
+  }
+
+  // Insight 6: Gender imbalance
+  if (gList.length >= 2) {
+    const mPct = Math.round((gList.find(g=>g[0].toLowerCase()==='male')?.[1]||0)/total*100);
+    const fPct = Math.round((gList.find(g=>g[0].toLowerCase()==='female')?.[1]||0)/total*100);
+    if (mPct > 0 && fPct > 0 && Math.abs(mPct-fPct) > 40) {
+      flags.push(`Gender composition is <strong>${mPct}% Male / ${fPct}% Female</strong> — a significant imbalance that may warrant review in hiring and promotion pipelines.`);
+    }
+  }
+
+  // Pick best 2-3 flags as the actual summary
+  const selected = flags.slice(0, 3);
+  const fullText = [insights[0], ...selected].join(' ');
+  document.getElementById('aiText').innerHTML = fullText;
+}
 function switchTab(tab) {
   ['cc','ops','region'].forEach(t => { document.getElementById('tab-'+t).style.display = t===tab?'':'none'; });
   document.querySelectorAll('.tab').forEach((el,i) => { el.classList.toggle('active', ['cc','ops','region'][i]===tab); });
