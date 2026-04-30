@@ -183,12 +183,11 @@ const avgBy = (rows, key, val) => { const s={}, c={}; rows.forEach(r => { const 
 const sorted = (obj, desc=true) => Object.entries(obj).sort((a,b) => desc ? b[1]-a[1] : a[1]-b[1]);
 
 function estAttrition(activeRows, allRows) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 30);
+  const ytdCutoff = new Date(new Date().getFullYear(), 0, 1);
   const exits = allRows.filter(r => {
-    if (!r._isActive && (r._termType||'').toLowerCase() === 'voluntary') {
+    if (!r._isActive && r._isEligible && r._org3 !== 'Packaging' && (r._termType||'').toLowerCase() === 'voluntary') {
       const d = new Date(r._termDate);
-      return !isNaN(d) && d >= cutoff;
+      return !isNaN(d) && d >= ytdCutoff;
     }
     return false;
   }).length;
@@ -963,5 +962,4 @@ function loadSampleData() {
   }
   document.getElementById('upload-screen').style.display = 'none';
   document.getElementById('loading').style.display = 'flex';
-  setTimeout(() => renderReport(parseHC(tsv, 'sample-data.tsv')), 800);
-}
+  setTimeout(() => renderReport(par
