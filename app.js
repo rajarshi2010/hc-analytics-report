@@ -197,7 +197,6 @@ function estAttrition(activeRows, allRows) {
 }
 
 function renderReport(data) {
-  try {
   const { rows, excludedCount, filename, colOrg3, colOrg4, colStatus } = data;
   const total = rows.length;
   const withTenure = rows.filter(r => r._tenureYears != null);
@@ -348,13 +347,14 @@ function renderReport(data) {
     options: { ...baseChart, indexAxis:'y', scales: { x:{...baseChart.scales.x}, y:{...baseChart.scales.y, ticks:{color:tickC, font:{size:11, family:"'Segoe UI'"}}} } }
   });
 
-  // ── Attrition — YTD, excl transfers, excl Packaging ──
+  // ── Attrition — last 30 days, excl transfers, excl Packaging ──
   const termedRows = data.allRows.filter(r => !r._isActive && r._org3 !== 'Packaging' && r._isEligible);
-  const ytdStart = new Date(new Date().getFullYear(), 0, 1);
+  const cutoff30b = new Date();
+  cutoff30b.setDate(cutoff30b.getDate() - 30);
   const termedLast12 = termedRows.filter(r => {
     if (!r._termDate) return false;
     const d = new Date(r._termDate);
-    return !isNaN(d) && d >= ytdStart && (r._termType||'').toLowerCase() !== 'transfer';
+    return !isNaN(d) && d >= cutoff30 && (r._termType||'').toLowerCase() !== 'transfer';
   });
   const volRows    = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'voluntary');
   const involRows  = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'involuntary');
@@ -678,11 +678,6 @@ function renderReport(data) {
 
   document.getElementById('loading').style.display = 'none';
   document.getElementById('report-screen').style.display = 'block';
-  } catch(err) {
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('upload-screen').style.display = 'flex';
-    alert('Report error: ' + err.message + '\n\nLine: ' + (err.stack ? err.stack.split('\n')[1] : 'unknown'));
-  }
 }
 
 function buildNarrative(rows, total, attrPct, volCount, involCount, termedYTD, termedRows, allRows) {
