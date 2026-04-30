@@ -191,7 +191,7 @@ function estAttrition(activeRows, allRows) {
   return total > 0 ? Math.round(exits/total*100) : null;
 }
 
-function renderReport(data) {
+async function renderReport(data) {
   const { rows, excludedCount, filename, colOrg3, colOrg4, colStatus } = data;
   const total = rows.length;
   const withTenure = rows.filter(r => r._tenureYears != null);
@@ -223,7 +223,7 @@ function renderReport(data) {
     { label: 'Voluntary attrition', value: attrPct != null ? attrPct + '%' : '—' },
   ].map(k => `<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.value}</div></div>`).join('');
 
-  buildNarrative(rows, total, avgTenure, attrPct, topCompany, companies);
+  // narrative called after attrition data is built below
 
   // ── Gender donut — same style as Vol/Invol chart ──
   const gMap = countBy(rows,'_gender');
@@ -341,6 +341,9 @@ function renderReport(data) {
   const totalTermed = volCount + involCount;
 
   document.getElementById('attrNote').textContent = `${totalTermed} exits (last 30 days) · ${volCount} voluntary · ${involCount} involuntary`;
+
+  // ── AI narrative — called here so all attrition vars are in scope ──
+  buildNarrative(rows, total, attrPct, volCount, involCount, termedLast12, termedRows, data.allRows);
 
   const groupBy = (rows, key) => {
     const m = {};
@@ -655,29 +658,111 @@ function renderReport(data) {
   document.getElementById('report-screen').style.display = 'block';
 }
 
-function buildNarrative(rows, total, avgTenure, attrPct, topCompany, companies) {
-  const regMap = countBy(rows,'_region');
-  const ccMap = countBy(rows,'_org2');
-  const topReg = sorted(regMap)[0];
-  const topCC = sorted(ccMap)[0];
-  const gMap = countBy(rows,'_gender');
-  const gList = sorted(gMap);
-  const withT = rows.filter(r=>r._tenureYears!=null);
-  const newJ = withT.filter(r=>r._tenureYears<1).length;
-  const longT = withT.filter(r=>r._tenureYears>=5).length;
+async function buildNarrative(rows, total, attrPct, volCount, involCount, termedLast12, termedRows, allRows) {
+  document.getElementById('aiText').innerHTML = '<em style="color:var(--ink-3)">Generating insights with Claude AI...</em>';
 
-  let n = `The workforce stands at <strong>${total.toLocaleString()} employees</strong>`;
-  if (companies === 1 && topCompany) n += ` under <strong>${topCompany[0]}</strong>`;
-  else if (companies > 1) n += ` across <strong>${companies} legal entities</strong>`;
-  n += `.`;
-  if (topReg) n += ` <strong>${topReg[0]}</strong> is the largest region with <strong>${topReg[1].toLocaleString()} employees</strong> (${Math.round(topReg[1]/total*100)}%).`;
-  if (topCC) n += ` The <strong>${topCC[0]}</strong> cost center leads headcount at <strong>${topCC[1].toLocaleString()}</strong>.`;
-  if (attrPct != null) n += ` Estimated attrition stands at <strong>${attrPct}%</strong>.`;
-  if (newJ) n += ` <strong>${newJ.toLocaleString()} employees</strong> (${Math.round(newJ/total*100)}%) have under one year of tenure — a signal of active recent hiring.`;
-  if (longT) n += ` <strong>${longT.toLocaleString()} employees</strong> (${Math.round(longT/total*100)}%) have 5+ years of tenure, indicating strong retention of senior talent.`;
-  if (gList.length > 1) n += ` Gender split: <strong>${gList[0][0]}</strong> ${Math.round(gList[0][1]/total*100)}%, <strong>${gList[1][0]}</strong> ${Math.round(gList[1][1]/total*100)}%.`;
+  // Build rich data snapshot for Claude to analyse
+  const regMap   = countBy(rows,'_region');
+  const ccMap    = countBy(rows,'_org2');
+  const opsMap   = countBy(rows,'_org3');
+  const gMap     = countBy(rows,'_gender');
+  const withT    = rows.filter(r=>r._tenureYears!=null);
+  const newJ     = withT.filter(r=>r._tenureYears<1).length;
+  const mid      = withT.filter(r=>r._tenureYears>=2&&r._tenureYears<5).length;
+  const longT    = withT.filter(r=>r._tenureYears>=5).length;
+  const avgTen   = withT.length ? (withT.reduce((s,r)=>s+r._tenureYears,0)/withT.length).toFixed(1) : null;
 
-  document.getElementById('aiText').innerHTML = n;
+  // Attrition by region (last 30 days vol)
+  const regVolMap = {};
+  termedLast12.filter(r=>(r._termType||'').toLowerCase()==='voluntary').forEach(r=>{ regVolMap[r._region]=(regVolMap[r._region]||0)+1; });
+  const regAttr = sorted(regMap).map(([r,a])=>({ region:r, active:a, volExits:regVolMap[r]||0, pct: a>0?Math.round((regVolMap[r]||0)/(a+(regVolMap[r]||0))*100):0 }));
+
+  // Attrition by cost center (last 30d)
+  const ccVolMap={}, ccInvolMap={};
+  termedLast12.filter(r=>(r._termType||'').toLowerCase()==='voluntary').forEach(r=>{ccVolMap[r._org2]=(ccVolMap[r._org2]||0)+1;});
+  termedLast12.filter(r=>(r._termType||'').toLowerCase()==='involuntary').forEach(r=>{ccInvolMap[r._org2]=(ccInvolMap[r._org2]||0)+1;});
+  const ccAttr = sorted(ccMap).map(([cc,a])=>({ cc, active:a, vol:ccVolMap[cc]||0, invol:ccInvolMap[cc]||0, volPct:Math.round((ccVolMap[cc]||0)/(a+(ccVolMap[cc]||0))*100) }));
+
+  // MoM trend — last 6 months
+  const momMap={};
+  termedRows.filter(r=>(r._termType||'').toLowerCase()!=='transfer').forEach(r=>{
+    if(!r._termDate) return; const d=new Date(r._termDate); if(isNaN(d)) return;
+    const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    if(!momMap[ym]) momMap[ym]={vol:0,invol:0};
+    const t=(r._termType||'').toLowerCase();
+    if(t==='voluntary') momMap[ym].vol++; else if(t==='involuntary') momMap[ym].invol++;
+  });
+  const last6m = Object.keys(momMap).sort().slice(-6).map(m=>({month:m,...momMap[m]}));
+
+  // Top vol reasons
+  const reasonMap={};
+  termedLast12.filter(r=>(r._termType||'').toLowerCase()==='voluntary').forEach(r=>{const v=r._termReason||'Unknown';reasonMap[v]=(reasonMap[v]||0)+1;});
+  const topReasons = sorted(reasonMap).slice(0,5);
+
+  // Ops segments
+  const opsAttr = sorted(opsMap).map(([seg,a])=>{
+    const sv=termedLast12.filter(r=>r._org3===seg&&(r._termType||'').toLowerCase()==='voluntary').length;
+    const iv=termedLast12.filter(r=>r._org3===seg&&(r._termType||'').toLowerCase()==='involuntary').length;
+    return { seg, active:a, vol:sv, invol:iv, volPct:Math.round(sv/(a+sv)*100||0) };
+  });
+
+  const dataPayload = {
+    reportDate: new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}),
+    totalActive: total,
+    activeEntities: [...new Set(rows.map(r=>r._company))].length,
+    avgTenureYears: avgTen,
+    tenureBreakdown: { under1yr: newJ, mid2to5yr: mid, over5yr: longT },
+    voluntaryAttritionPct30d: attrPct,
+    last30dExits: { voluntary: volCount, involuntary: involCount },
+    genderSplit: Object.fromEntries(sorted(gMap).map(([g,c])=>[g, Math.round(c/total*100)+'%'])),
+    regionBreakdown: regAttr,
+    costCenterBreakdown: ccAttr.slice(0,10),
+    opsSegmentBreakdown: opsAttr,
+    last6MonthTrend: last6m,
+    topVoluntaryReasons: topReasons,
+  };
+
+  const prompt = `You are an elite HR analytics advisor preparing a brief executive summary for senior leadership. 
+Analyse this headcount and attrition data and write 3-4 punchy sentences that surface insights leadership would typically MISS — patterns, risks, anomalies, or trends hiding in the numbers. 
+Do NOT just restate the obvious numbers. Focus on:
+- Unusual concentrations of attrition in specific cost centers, regions, or tenure bands
+- Warning signals (e.g. high % of new joiners suggesting future attrition risk, involuntary spike in a specific segment)
+- Positive signals worth calling out
+- Any pattern that warrants immediate leadership attention
+
+Use plain English. Be direct. Bold the most important 2-3 findings. No bullet points — flowing sentences only.
+Keep it under 80 words total.
+
+Data (as of ${dataPayload.reportDate}):
+${JSON.stringify(dataPayload, null, 2)}`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    const data = await response.json();
+    const text = data.content?.[0]?.text || '';
+    // Convert **bold** markdown to HTML
+    const html = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    document.getElementById('aiText').innerHTML = html;
+  } catch(e) {
+    // Fallback to template if API fails
+    const regMap2 = countBy(rows,'_region');
+    const topReg = sorted(regMap2)[0];
+    const ccMap2 = countBy(rows,'_org2');
+    const topCC = sorted(ccMap2)[0];
+    let n = `The workforce stands at <strong>${total.toLocaleString()} employees</strong>.`;
+    if (topReg) n += ` <strong>${topReg[0]}</strong> is the largest region (${Math.round(topReg[1]/total*100)}%).`;
+    if (topCC) n += ` <strong>${topCC[0]}</strong> leads headcount at ${topCC[1].toLocaleString()}.`;
+    if (attrPct != null) n += ` Voluntary attrition stands at <strong>${attrPct}%</strong>.`;
+    document.getElementById('aiText').innerHTML = n;
+  }
 }
 
 function switchTab(tab) {
