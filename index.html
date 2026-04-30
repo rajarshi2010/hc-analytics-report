@@ -175,14 +175,27 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     </div>
     <div class="chart-grid-2">
       <div class="chart-card">
-        <div class="cc-title">Headcount by hire month</div>
-        <div class="cc-sub">Monthly new hires · last 12 months · last 6 months highlighted</div>
-        <div class="chart-wrap" style="height:220px;"><canvas id="hcTrendChart" role="img" aria-label="Headcount trend by hire month"></canvas></div>
+        <div class="cc-title">New hires by month</div>
+        <div class="cc-sub">Last 12 months · last 6 months highlighted in dark blue</div>
+        <div class="chart-wrap" style="height:220px;"><canvas id="hcTrendChart" role="img" aria-label="New hires per month last 12 months"></canvas></div>
       </div>
       <div class="chart-card">
         <div class="cc-title">Headcount by gender</div>
         <div class="cc-sub">Distribution across workforce</div>
         <div class="chart-wrap" style="height:340px;"><canvas id="genderChart" role="img" aria-label="Headcount by gender with percentage labels"></canvas></div>
+      </div>
+    </div>
+
+    <div class="chart-grid-2">
+      <div class="chart-card">
+        <div class="cc-title">Headcount trend — last 12 months</div>
+        <div class="cc-sub">Cumulative active headcount · last 6 months highlighted</div>
+        <div class="chart-wrap" style="height:220px;"><canvas id="hcCumulChart" role="img" aria-label="Headcount trend last 12 months"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="cc-title">Month-on-month headcount change</div>
+        <div class="cc-sub">Net change (hires) · last 6 months focus</div>
+        <div class="chart-wrap" style="height:220px;"><canvas id="hcDeltaChart" role="img" aria-label="Month on month headcount change"></canvas></div>
       </div>
     </div>
 
@@ -309,19 +322,19 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 
     <div class="section-head">
       <div class="section-title">Attrition by ops segment</div>
-      <div class="section-note">Last 12 months exits ÷ active headcount · select segment · only shows cost centers/products with exits</div>
+      <div class="section-note">YTD exits ÷ active headcount · select segment · only shows cost centers/products with exits</div>
     </div>
     <div class="full-card">
       <div class="tab-row" id="opsAttrTabs"></div>
       <div class="chart-grid-2">
         <div class="chart-card">
           <div class="cc-title" id="opsAttrCCTitle">By cost center</div>
-          <div class="cc-sub">Active HC vs vol/invol exits last 12 months</div>
+          <div class="cc-sub">Active HC vs vol/invol exits YTD</div>
           <div class="chart-wrap" style="height:280px;"><canvas id="opsAttrCCChart" role="img" aria-label="Attrition by cost center for selected ops segment"></canvas></div>
         </div>
         <div class="chart-card">
           <div class="cc-title" id="opsAttrProdTitle">By product</div>
-          <div class="cc-sub">Active HC vs vol/invol exits last 12 months</div>
+          <div class="cc-sub">Active HC vs vol/invol exits YTD</div>
           <div class="chart-wrap" style="height:280px;"><canvas id="opsAttrProdChart" role="img" aria-label="Attrition by product for selected ops segment"></canvas></div>
         </div>
       </div>
