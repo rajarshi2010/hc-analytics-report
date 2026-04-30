@@ -548,6 +548,7 @@ function renderReport(data) {
 
   // ── Attrition by ops segment — all segments visible, no tabs ──
   const container = document.getElementById('opsAttrContainer');
+  if (container) {
   container.innerHTML = '';
   opsSegments.forEach(seg => {
     const d = opsAttrData[seg];
@@ -609,6 +610,7 @@ function renderReport(data) {
     buildAttrPct(d.cc,   ccId);
     buildAttrPct(d.prod, prodId);
   });
+  } // end if(container)
 
 
 
@@ -942,4 +944,27 @@ function resetReport() {
   document.getElementById('upload-screen').style.display = 'flex';
   document.getElementById('fileInput').value = '';
   Object.values(charts).forEach(c=>c.destroy()); charts = {};
-  if (window._genderResizeObs) { window._genderResizeObs.disconnect(); window._genderResi
+  if (window._genderResizeObs) { window._genderResizeObs.disconnect(); window._genderResizeObs = null; }
+}
+
+function loadSampleData() {
+  const countries = ['India','India','India','United States','United States','United Kingdom','Germany','Singapore','Australia','UAE','France','Canada'];
+  const costCenters = ['Engineering','Operations','Finance','Human Resources','Sales','Legal & Compliance'];
+  const opsSegs = ['Core Platform','Customer Success','Risk & Control','Financial Planning','Revenue Growth','People Operations'];
+  const products = ['Product Alpha','Product Beta','Product Gamma','Product Delta','Product Epsilon'];
+  const genders = ['Male','Female','Female','Male','Non-binary'];
+  const now = new Date();
+  let tsv = 'Employee_ID\tGender\tCountry\tCompany\tOrg_Level_2\tOrg_Level_3\tOrg_Level_4\tOriginal_Hire_Date\tDate_of_Birth\tEmployment_Status\n';
+  for (let i = 1; i <= 600; i++) {
+    const hya = Math.random()*12;
+    const hd = new Date(now - hya*365.25*24*60*60*1000);
+    const ay = 22+Math.random()*38;
+    const dob = new Date(now - ay*365.25*24*60*60*1000);
+    const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const status = Math.random() < 0.12 ? 'Terminated' : 'Active';
+    tsv += `EMP${String(i).padStart(4,'0')}\t${genders[i%genders.length]}\t${countries[i%countries.length]}\tAcme Corp\t${costCenters[i%costCenters.length]}\t${opsSegs[i%opsSegs.length]}\t${products[i%products.length]}\t${fmt(hd)}\t${fmt(dob)}\t${status}\n`;
+  }
+  document.getElementById('upload-screen').style.display = 'none';
+  document.getElementById('loading').style.display = 'flex';
+  setTimeout(() => renderReport(parseHC(tsv, 'sample-data.tsv')), 800);
+}
