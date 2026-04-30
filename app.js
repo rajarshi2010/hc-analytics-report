@@ -818,20 +818,16 @@ function switchTab(tab) {
 
 function exportReport() {
   const date = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
-
-  // Get Chart.js source from the already-loaded script tag
-  const chartjsSrc = Array.from(document.querySelectorAll('script')).find(s => !s.src && s.textContent.includes('Chart.register'))?.textContent || '';
-
-  // Capture live HTML
-  const kpiHtml = document.getElementById('kpiStrip').innerHTML;
+  const kpiHtml  = document.getElementById('kpiStrip').innerHTML;
   const bodyHtml = document.querySelector('.report-body').innerHTML;
-  const aiHtml   = document.getElementById('aiText').innerHTML;
-
-  // Rebuild chart data
   const chartScript = getChartRebuildScript();
-
   const sc = '<\/script>';
-  const html = `<!DOCTYPE html>
+
+  // Chart.js is loaded as a separate script file — fetch it inline
+  const chartJsUrl = Array.from(document.querySelectorAll('script[src]')).find(s => s.src.includes('chart'))?.src;
+  
+  const buildHtml = (chartjsInline) => {
+    const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -895,35 +891,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div class="kpi-strip">${kpiHtml}</div>
 </div>
 <div class="report-body">${bodyHtml}</div>
-<div class="report-footer">Generated ${date} · HC Analytics Report · Regular &amp; PEO only · excl. Packaging · Data processed locally — no data was stored or transmitted.</div>
-<script>${chartjsSrc}${sc}
+<div class="report-footer">Generated ${date} · HC Analytics Report · Regular &amp; PEO only · excl. Packaging · No data was stored or transmitted.</div>
+<script>${chartjsInline}${sc}
 <script>
 const BLUE='#1a3a5c',BLUE_MID='#2a5f8c',BLUE_LIGHT='#4a8ab5',BLUE_PALE='#85b7d9',SLATE='#3a4a5c',STEEL='#5a7a8c',MUTED='#8ca5b5',WARN='#c84b2f';
 const gridC='rgba(15,14,12,0.07)',tickC='#7a7870';
-function switchTab(t){
-  ['cc','ops','region'].forEach(k=>{const el=document.getElementById('tab-'+k);if(el)el.style.display=k===t?'':'none';});
-  document.querySelectorAll('.tab-row .tab').forEach(el=>{el.classList.toggle('active',el.textContent.trim().toLowerCase().startsWith(t));});
-}
-function switchOpsTab(seg){
-  document.querySelectorAll('[id^="opsTab-"]').forEach(el=>el.style.display='none');
-  const el=document.getElementById('opsTab-'+seg.replace(/[^a-z0-9]/gi,'_'));
-  if(el)el.style.display='';
-  document.querySelectorAll('#opsAttrTabs .tab').forEach(el=>el.classList.toggle('active',el.dataset.seg===seg));
-}
-window.addEventListener('DOMContentLoaded',()=>{
-  ${chartScript}
-});
+function switchTab(t){['cc','ops','region'].forEach(k=>{const el=document.getElementById('tab-'+k);if(el)el.style.display=k===t?'':'none';});document.querySelectorAll('.tab-row .tab').forEach(el=>{el.classList.toggle('active',el.textContent.trim().toLowerCase().startsWith(t));});}
+${chartScript}
 ${sc}
 </body>
 </html>`;
+    const blob = new Blob([html], {type:'text/html'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `HC-Analytics-Report-${date.replace(/\s/g,'-')}.html`;
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(url), 5000);
+  };
 
-  const blob = new Blob([html], {type:'text/html'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `HC-Analytics-Report-${date.replace(/\s/g,'-')}.html`;
-  a.click();
-  setTimeout(()=>URL.revokeObjectURL(url), 5000);
+  // Fetch chart.min.js to inline it
+  if (chartJsUrl) {
+    fetch(chartJsUrl).then(r=>r.text()).then(src=>buildHtml(src)).catch(()=>buildHtml(''));
+  } else {
+    buildHtml('');
+  }
 }
 
 function getChartRebuildScript() {
