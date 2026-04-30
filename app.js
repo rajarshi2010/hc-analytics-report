@@ -197,6 +197,7 @@ function estAttrition(activeRows, allRows) {
 }
 
 function renderReport(data) {
+  try {
   const { rows, excludedCount, filename, colOrg3, colOrg4, colStatus } = data;
   const total = rows.length;
   const withTenure = rows.filter(r => r._tenureYears != null);
@@ -313,7 +314,64 @@ function renderReport(data) {
     }
   });
 
-  // ── Cost Center chart (Org Level 2 actual values) ──
+  // ── HC Cumulative Trend — last 12 months, line chart ──
+  // Build cumulative headcount month-by-month using hire dates
+  const hcByMonth = {};
+  const allMonths12 = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i);
+    const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    allMonths12.push(ym);
+  }
+  // For each month, count employees who joined on or before that month-end
+  allMonths12.forEach(ym => {
+    const [y, m] = ym.split('-').map(Number);
+    const monthEnd = new Date(y, m, 0); // last day of month
+    const count = rows.filter(r => {
+      if (!r._tenureYears) return false;
+      const hireD = new Date(Date.now() - r._tenureYears*365.25*24*60*60*1000);
+      return hireD <= monthEnd;
+    }).length;
+    hcByMonth[ym] = count;
+  });
+  const cumulLabels = allMonths12.map(m => { const [y,mo]=m.split('-'); return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo-1]} ${y.slice(2)}`; });
+  const cumulData = allMonths12.map(m => hcByMonth[m]);
+  const sixMoAgo2 = new Date(); sixMoAgo2.setMonth(sixMoAgo2.getMonth()-6);
+  const cumulColors = allMonths12.map(m => { const d=new Date(m+'-01'); return d >= sixMoAgo2 ? BLUE : BLUE_PALE; });
+  const pointSizes = allMonths12.map(m => { const d=new Date(m+'-01'); return d >= sixMoAgo2 ? 5 : 3; });
+  dc('hcCumulChart');
+  charts['hcCumulChart'] = new Chart(document.getElementById('hcCumulChart'), {
+    type: 'line',
+    data: { labels: cumulLabels, datasets: [{
+      label: 'Headcount', data: cumulData,
+      borderColor: BLUE, backgroundColor: 'rgba(26,58,92,0.06)', fill: true,
+      tension: 0.3, pointRadius: pointSizes,
+      pointBackgroundColor: cumulColors, pointBorderColor: cumulColors, borderWidth: 2
+    }]},
+    options: { ...baseChart, scales: { ...baseChart.scales,
+      x: { ...baseChart.scales.x, ticks: { ...baseChart.scales.x.ticks, maxRotation: 45 } }
+    }}
+  });
+
+  // ── HC Delta Chart — net monthly change (new hires) ──
+  const deltaData = allMonths12.map((m, i) => i === 0 ? 0 : (hcByMonth[m] - hcByMonth[allMonths12[i-1]]));
+  const deltaColors = deltaData.map((v, i) => {
+    const d = new Date(allMonths12[i]+'-01');
+    const isRecent = d >= sixMoAgo2;
+    return v >= 0 ? (isRecent ? BLUE : BLUE_PALE) : (isRecent ? WARN : '#f0bfb2');
+  });
+  dc('hcDeltaChart');
+  charts['hcDeltaChart'] = new Chart(document.getElementById('hcDeltaChart'), {
+    type: 'bar',
+    data: { labels: cumulLabels.slice(1), datasets: [{
+      label: 'Net change', data: deltaData.slice(1),
+      backgroundColor: deltaColors.slice(1), borderRadius: 4
+    }]},
+    options: { ...baseChart, scales: {
+      x: { ...baseChart.scales.x, ticks: { ...baseChart.scales.x.ticks, maxRotation: 45 } },
+      y: { ...baseChart.scales.y, ticks: { ...baseChart.scales.y.ticks, callback: v => (v>=0?'+':'')+v } }
+    }}
+  });
   const ccMap = countBy(rows,'_org2');
   const ccEntries = sorted(ccMap).slice(0,15);
   dc('costCenterChart');
@@ -347,14 +405,13 @@ function renderReport(data) {
     options: { ...baseChart, indexAxis:'y', scales: { x:{...baseChart.scales.x}, y:{...baseChart.scales.y, ticks:{color:tickC, font:{size:11, family:"'Segoe UI'"}}} } }
   });
 
-  // ── Attrition — last 30 days, excl transfers, excl Packaging ──
+  // ── Attrition — YTD, excl transfers, excl Packaging ──
   const termedRows = data.allRows.filter(r => !r._isActive && r._org3 !== 'Packaging' && r._isEligible);
-  const cutoff30b = new Date();
-  cutoff30b.setDate(cutoff30b.getDate() - 30);
+  const ytdStart = new Date(new Date().getFullYear(), 0, 1);
   const termedLast12 = termedRows.filter(r => {
     if (!r._termDate) return false;
     const d = new Date(r._termDate);
-    return !isNaN(d) && d >= cutoff30 && (r._termType||'').toLowerCase() !== 'transfer';
+    return !isNaN(d) && d >= ytdStart && (r._termType||'').toLowerCase() !== 'transfer';
   });
   const volRows    = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'voluntary');
   const involRows  = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'involuntary');
@@ -509,17 +566,11 @@ function renderReport(data) {
   mkSepBar('reasonVolChart',   groupBy(volRows,   '_termReason'), true);
   mkSepBar('reasonInvolChart', groupBy(involRows, '_termReason'), false);
 
-  // ── Attrition by ops segment — tabbed — last 12 months ──
+  // ── Attrition by ops segment — tabbed — YTD ──
   const opsAttrData = {};
-  const cutoff12months = new Date();
-  cutoff12months.setFullYear(cutoff12months.getFullYear() - 1);
-  const termed12m = termedRows.filter(r => {
-    if (!r._termDate) return false;
-    const d = new Date(r._termDate);
-    return !isNaN(d) && d >= cutoff12months && (r._termType||'').toLowerCase() !== 'transfer';
-  });
-  const vol12m   = termed12m.filter(r => (r._termType||'').toLowerCase() === 'voluntary');
-  const invol12m = termed12m.filter(r => (r._termType||'').toLowerCase() === 'involuntary');
+  // Use YTD (same as rest of attrition analysis)
+  const vol12m   = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'voluntary');
+  const invol12m = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'involuntary');
 
   const opsSegments = [...new Set(rows.map(r => r._org3).filter(s => s && s !== 'Unknown'))].sort();
 
@@ -678,6 +729,11 @@ function renderReport(data) {
 
   document.getElementById('loading').style.display = 'none';
   document.getElementById('report-screen').style.display = 'block';
+  } catch(err) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('upload-screen').style.display = 'flex';
+    alert('Report error: ' + err.message + '\n\nLine: ' + (err.stack ? err.stack.split('\n')[1] : 'unknown'));
+  }
 }
 
 function buildNarrative(rows, total, attrPct, volCount, involCount, termedYTD, termedRows, allRows) {
