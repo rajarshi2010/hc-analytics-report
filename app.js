@@ -818,16 +818,30 @@ function switchTab(tab) {
 
 function exportReport() {
   const date = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
-  const kpiHtml  = document.getElementById('kpiStrip').innerHTML;
-  const bodyHtml = document.querySelector('.report-body').innerHTML;
-  const chartScript = getChartRebuildScript();
-  const sc = '<\/script>';
+  const kpiHtml = document.getElementById('kpiStrip').innerHTML;
 
-  // Chart.js is loaded as a separate script file — fetch it inline
-  const chartJsUrl = Array.from(document.querySelectorAll('script[src]')).find(s => s.src.includes('chart'))?.src;
-  
-  const buildHtml = (chartjsInline) => {
-    const html = `<!DOCTYPE html>
+  // Snapshot every canvas to a PNG image so no Chart.js needed in export
+  const reportBody = document.querySelector('.report-body').cloneNode(true);
+
+  // Replace each canvas with an <img> of the same size
+  reportBody.querySelectorAll('canvas').forEach(canvas => {
+    const orig = document.getElementById(canvas.id);
+    if (!orig) return;
+    try {
+      const img = document.createElement('img');
+      img.src = orig.toDataURL('image/png');
+      img.style.width = '100%';
+      img.style.height = orig.style.height || orig.offsetHeight + 'px';
+      img.style.display = 'block';
+      canvas.parentNode.replaceChild(img, canvas);
+    } catch(e) {}
+  });
+
+  // Remove export/new report buttons if any leaked in
+  reportBody.querySelectorAll('.rh-export,.rh-reset').forEach(el => el.remove());
+
+  const sc = '<' + '/script>';
+  const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -863,19 +877,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .legend-item{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-3)}
 .legend-swatch{width:10px;height:10px;border-radius:2px;flex-shrink:0}
 .tab-row{display:flex;gap:4px;margin-bottom:1.25rem;flex-wrap:wrap}
-.tab{font-size:13px;padding:6px 16px;border-radius:99px;border:1px solid var(--border-strong);background:transparent;color:var(--ink-3);cursor:pointer;font-family:inherit}
+.tab{font-size:13px;padding:6px 16px;border-radius:99px;border:1px solid var(--border-strong);background:transparent;color:var(--ink-3)}
 .tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.full-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem 1.5rem 1.75rem;margin-bottom:1.5rem}
+.data-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+.data-table th{text-align:left;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);padding:8px 10px;border-bottom:1px solid var(--border)}
+.data-table td{padding:9px 10px;border-bottom:1px solid var(--border);color:var(--ink-2)}
+.data-table tr:last-child td{border-bottom:none}
 .hbar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .hbar-label{font-size:13px;color:var(--ink-3);width:140px;flex-shrink:0;text-align:right}
 .hbar-track{flex:1;background:#eee;border-radius:3px;height:22px;overflow:hidden}
 .hbar-fill{height:100%;border-radius:3px;display:flex;align-items:center;padding-left:10px}
 .hbar-fill span{font-size:12px;font-weight:500;color:#fff}
 .hbar-pct{font-size:12px;color:var(--ink-3);width:110px;text-align:right;flex-shrink:0}
-.full-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem 1.5rem 1.75rem;margin-bottom:1.5rem}
-.data-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
-.data-table th{text-align:left;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);padding:8px 10px;border-bottom:1px solid var(--border)}
-.data-table td{padding:9px 10px;border-bottom:1px solid var(--border);color:var(--ink-2)}
-.data-table tr:last-child td{border-bottom:none}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;font-weight:500}
 .badge-neu{background:#ebebeb;color:#555}
 .report-footer{text-align:center;padding:2rem;font-size:12px;color:var(--ink-3);border-top:1px solid var(--border)}
@@ -890,34 +904,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
   <div class="kpi-strip">${kpiHtml}</div>
 </div>
-<div class="report-body">${bodyHtml}</div>
-<div class="report-footer">Generated ${date} · HC Analytics Report · Regular &amp; PEO only · excl. Packaging · No data was stored or transmitted.</div>
-<script>${chartjsInline}${sc}
-<script>
-const BLUE='#1a3a5c',BLUE_MID='#2a5f8c',BLUE_LIGHT='#4a8ab5',BLUE_PALE='#85b7d9',SLATE='#3a4a5c',STEEL='#5a7a8c',MUTED='#8ca5b5',WARN='#c84b2f';
-const gridC='rgba(15,14,12,0.07)',tickC='#7a7870';
-function switchTab(t){['cc','ops','region'].forEach(k=>{const el=document.getElementById('tab-'+k);if(el)el.style.display=k===t?'':'none';});document.querySelectorAll('.tab-row .tab').forEach(el=>{el.classList.toggle('active',el.textContent.trim().toLowerCase().startsWith(t));});}
-${chartScript}
-${sc}
+<div class="report-body">${reportBody.innerHTML}</div>
+<div class="report-footer">Generated ${date} · HC Analytics · Regular &amp; PEO only · excl. Packaging · No data stored or transmitted.</div>
 </body>
 </html>`;
-    const blob = new Blob([html], {type:'text/html'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `HC-Analytics-Report-${date.replace(/\s/g,'-')}.html`;
-    a.click();
-    setTimeout(()=>URL.revokeObjectURL(url), 5000);
-  };
 
-  // Fetch chart.min.js to inline it
-  if (chartJsUrl) {
-    fetch(chartJsUrl).then(r=>r.text()).then(src=>buildHtml(src)).catch(()=>buildHtml(''));
-  } else {
-    buildHtml('');
-  }
+  const blob = new Blob([html], {type:'text/html'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `HC-Analytics-Report-${date.replace(/\s/g,'-')}.html`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 5000);
 }
-
+  
 function getChartRebuildScript() {
   // Serialize current chart data so the exported HTML can rebuild them
   const lines = [];
