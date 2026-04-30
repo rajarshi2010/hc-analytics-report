@@ -441,51 +441,6 @@ function renderReport(data) {
     });
   };
 
-  // ── Voluntary vs Involuntary donut ──
-  dc('attrSplitChart');
-  charts['attrSplitChart'] = new Chart(document.getElementById('attrSplitChart'), {
-    type: 'doughnut',
-    data: {
-      labels: ['Involuntary','Voluntary'],
-      datasets: [{ data: [involCount, volCount], backgroundColor: [WARN, BLUE], borderWidth: 3, borderColor: '#fff' }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false, cutout: '58%',
-      plugins: {
-        legend: { display: true, position: 'bottom', labels: { color: tickC, font: { size: 12, family:"'Segoe UI'" }, padding: 14, boxWidth: 12, boxHeight: 12 } },
-        tooltip: { backgroundColor:'#0f0e0c', titleColor:'#f9f6f0', bodyColor:'#c8c5bb',
-          callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed} (${Math.round(ctx.parsed/totalTermed*100)}%)` } }
-      },
-      animation: { onComplete: function() {
-        const ctx2 = this.ctx;
-        const W2 = this.chartArea;
-        const cx2 = (W2.left+W2.right)/2, cy2 = (W2.top+W2.bottom)/2;
-        ctx2.save();
-        ctx2.fillStyle = '#0f0e0c'; ctx2.font = '500 24px DM Sans, sans-serif';
-        ctx2.textAlign = 'center'; ctx2.textBaseline = 'middle';
-        ctx2.fillText(totalTermed, cx2, cy2 - 10);
-        ctx2.fillStyle = '#7a7870'; ctx2.font = '400 11px DM Sans, sans-serif';
-        ctx2.fillText('exits', cx2, cy2 + 10);
-        ctx2.restore();
-        this.data.datasets.forEach((ds, di) => {
-          this.getDatasetMeta(di).data.forEach((arc, j) => {
-            const val = ds.data[j];
-            if (!val) return;
-            const pct = Math.round(val/totalTermed*100);
-            if (pct < 5) return;
-            const pos = arc.tooltipPosition();
-            ctx2.save();
-            ctx2.fillStyle = '#fff';
-            ctx2.font = '500 13px DM Sans, sans-serif';
-            ctx2.textAlign = 'center'; ctx2.textBaseline = 'middle';
-            ctx2.fillText(pct+'%', pos.x, pos.y);
-            ctx2.restore();
-          });
-        });
-      }}
-    }
-  });
-
   // ── Vol/Invol donut ──
   dc('attrSplitChart');
   charts['attrSplitChart'] = new Chart(document.getElementById('attrSplitChart'), {
