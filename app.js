@@ -817,27 +817,33 @@ function switchTab(tab) {
 }
 
 function exportReport() {
-  // Capture current rendered report body HTML
-  const reportHeader = document.querySelector('.report-header').outerHTML;
-  const reportBody = document.querySelector('.report-body').outerHTML;
   const date = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
 
-  const scriptClose = '<' + '/script>';
+  // Get Chart.js source from the already-loaded script tag
+  const chartjsSrc = Array.from(document.querySelectorAll('script')).find(s => !s.src && s.textContent.includes('Chart.register'))?.textContent || '';
+
+  // Capture live HTML
+  const kpiHtml = document.getElementById('kpiStrip').innerHTML;
+  const bodyHtml = document.querySelector('.report-body').innerHTML;
+  const aiHtml   = document.getElementById('aiText').innerHTML;
+
+  // Rebuild chart data
+  const chartScript = getChartRebuildScript();
+
+  const sc = '<\/script>';
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>HC Analytics Report · ${date}</title>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js">` + `</` + `script>
 <style>
 :root{--ink:#0f0e0c;--ink-2:#3a3830;--ink-3:#7a7870;--paper:#f9f6f0;--surface:#ffffff;--accent:#1a3a5c;--accent-2:#c84b2f;--border:rgba(15,14,12,0.10);--border-strong:rgba(15,14,12,0.18);--radius:4px;--radius-lg:8px}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased}
 .report-header{background:linear-gradient(135deg,#0a2240 0%,#1565c0 55%,#1e88e5 100%);color:#fff;padding:2.5rem 3rem 2rem}
 .rh-top{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem}
-.rh-title{font-family:Georgia,'Times New Roman',serif;font-size:clamp(1.6rem,3.5vw,2.6rem);line-height:1.15}
+.rh-title{font-family:Georgia,serif;font-size:clamp(1.6rem,3.5vw,2.6rem);line-height:1.15}
 .rh-title em{font-style:italic;color:#90caf9}
 .kpi-strip{display:flex;flex-wrap:wrap;gap:0;border-top:1px solid rgba(255,255,255,.2);padding-top:1.5rem}
 .kpi{padding:0 2.5rem 0 0;min-width:140px}
@@ -850,7 +856,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .ai-text{font-size:15px;line-height:1.75;color:var(--ink-2)}
 .ai-text strong{color:var(--ink);font-weight:500}
 .section-head{display:flex;align-items:baseline;justify-content:space-between;margin:2rem 0 1rem;border-bottom:1px solid var(--border);padding-bottom:8px}
-.section-title{font-family:Georgia,'Times New Roman',serif;font-size:18px;color:var(--ink)}
+.section-title{font-family:Georgia,serif;font-size:18px;color:var(--ink)}
 .section-note{font-size:12px;color:var(--ink-3)}
 .chart-grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:1.5rem;margin-bottom:1.5rem}
 .chart-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem 1.5rem 1.5rem}
@@ -861,7 +867,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .legend-item{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-3)}
 .legend-swatch{width:10px;height:10px;border-radius:2px;flex-shrink:0}
 .tab-row{display:flex;gap:4px;margin-bottom:1.25rem;flex-wrap:wrap}
-.tab{font-size:13px;padding:6px 16px;border-radius:99px;border:1px solid var(--border-strong);background:transparent;color:var(--ink-3);cursor:pointer}
+.tab{font-size:13px;padding:6px 16px;border-radius:99px;border:1px solid var(--border-strong);background:transparent;color:var(--ink-3);cursor:pointer;font-family:inherit}
 .tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 .hbar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .hbar-label{font-size:13px;color:var(--ink-3);width:140px;flex-shrink:0;text-align:right}
@@ -886,19 +892,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div><div class="rh-title">Headcount &amp; <em>attrition</em></div></div>
     <div style="font-size:13px;opacity:.7">${date}</div>
   </div>
-  <div class="kpi-strip">${document.getElementById('kpiStrip').innerHTML}</div>
+  <div class="kpi-strip">${kpiHtml}</div>
 </div>
-<div class="report-body">
-${document.querySelector('.report-body').innerHTML}
-</div>
-<div class="report-footer">Generated ${date} · HC Analytics Report · Data processed locally — no data was stored or transmitted.</div>
-<` + `script>
-function switchTab(tab){['cc','ops','region'].forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.style.display=t===tab?'':'none';});document.querySelectorAll('.tab').forEach((el,i)=>{el.classList.toggle('active',['cc','ops','region'][i]===tab);});}
+<div class="report-body">${bodyHtml}</div>
+<div class="report-footer">Generated ${date} · HC Analytics Report · Regular &amp; PEO only · excl. Packaging · Data processed locally — no data was stored or transmitted.</div>
+<script>${chartjsSrc}${sc}
+<script>
 const BLUE='#1a3a5c',BLUE_MID='#2a5f8c',BLUE_LIGHT='#4a8ab5',BLUE_PALE='#85b7d9',SLATE='#3a4a5c',STEEL='#5a7a8c',MUTED='#8ca5b5',WARN='#c84b2f';
-const PALETTE=[BLUE,BLUE_MID,BLUE_LIGHT,SLATE,STEEL,BLUE_PALE,MUTED,'#2a4a6c','#1a4a6c','#3a6a8c'];
 const gridC='rgba(15,14,12,0.07)',tickC='#7a7870';
-${getChartRebuildScript()}
-${scriptClose}
+function switchTab(t){
+  ['cc','ops','region'].forEach(k=>{const el=document.getElementById('tab-'+k);if(el)el.style.display=k===t?'':'none';});
+  document.querySelectorAll('.tab-row .tab').forEach(el=>{el.classList.toggle('active',el.textContent.trim().toLowerCase().startsWith(t));});
+}
+function switchOpsTab(seg){
+  document.querySelectorAll('[id^="opsTab-"]').forEach(el=>el.style.display='none');
+  const el=document.getElementById('opsTab-'+seg.replace(/[^a-z0-9]/gi,'_'));
+  if(el)el.style.display='';
+  document.querySelectorAll('#opsAttrTabs .tab').forEach(el=>el.classList.toggle('active',el.dataset.seg===seg));
+}
+window.addEventListener('DOMContentLoaded',()=>{
+  ${chartScript}
+});
+${sc}
 </body>
 </html>`;
 
@@ -908,7 +923,7 @@ ${scriptClose}
   a.href = url;
   a.download = `HC-Analytics-Report-${date.replace(/\s/g,'-')}.html`;
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(()=>URL.revokeObjectURL(url), 5000);
 }
 
 function getChartRebuildScript() {
@@ -962,4 +977,5 @@ function loadSampleData() {
   }
   document.getElementById('upload-screen').style.display = 'none';
   document.getElementById('loading').style.display = 'flex';
-  setTimeout(() => renderReport(par
+  setTimeout(() => renderReport(parseHC(tsv, 'sample-data.tsv')), 800);
+}
