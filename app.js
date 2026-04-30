@@ -197,6 +197,7 @@ function estAttrition(activeRows, allRows) {
 }
 
 function renderReport(data) {
+  try {
   const { rows, excludedCount, filename, colOrg3, colOrg4, colStatus } = data;
   const total = rows.length;
   const withTenure = rows.filter(r => r._tenureYears != null);
@@ -677,6 +678,11 @@ function renderReport(data) {
 
   document.getElementById('loading').style.display = 'none';
   document.getElementById('report-screen').style.display = 'block';
+  } catch(err) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('upload-screen').style.display = 'flex';
+    alert('Report error: ' + err.message + '\n\nLine: ' + (err.stack ? err.stack.split('\n')[1] : 'unknown'));
+  }
 }
 
 function buildNarrative(rows, total, attrPct, volCount, involCount, termedYTD, termedRows, allRows) {
