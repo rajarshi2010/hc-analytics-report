@@ -546,70 +546,69 @@ function renderReport(data) {
     opsAttrData[seg] = { cc: byCC, prod: byProd, active: segActive.length, vol: segVol.length, invol: segInvol.length };
   });
 
-  function renderOpsAttrChart(seg) {
+  // ── Attrition by ops segment — all segments visible, no tabs ──
+  const container = document.getElementById('opsAttrContainer');
+  container.innerHTML = '';
+  opsSegments.forEach(seg => {
     const d = opsAttrData[seg];
     if (!d) return;
-    document.getElementById('opsAttrCCTitle').textContent = `${seg} — by cost center`;
-    document.getElementById('opsAttrProdTitle').textContent = `${seg} — by product`;
+    const ccId   = 'opsCC_'  + seg.replace(/[^a-z0-9]/gi,'_');
+    const prodId = 'opsProd_' + seg.replace(/[^a-z0-9]/gi,'_');
+    const segDiv = document.createElement('div');
+    segDiv.style.cssText = 'margin-bottom:1.5rem';
+    segDiv.innerHTML = `
+      <div style="font-size:13px;font-weight:500;color:var(--ink-3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.75rem;padding:.5rem 0;border-bottom:1px solid var(--border)">${seg}</div>
+      <div class="chart-grid-2">
+        <div class="chart-card">
+          <div class="cc-title" style="color:var(--ink)">By cost center</div>
+          <div class="cc-sub">Attrition % YTD · only CCs with exits shown</div>
+          <div class="chart-wrap" style="height:200px"><canvas id="${ccId}"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="cc-title" style="color:var(--ink)">By product</div>
+          <div class="cc-sub">Attrition % YTD · only products with exits shown</div>
+          <div class="chart-wrap" style="height:200px"><canvas id="${prodId}"></canvas></div>
+        </div>
+      </div>`;
+    container.appendChild(segDiv);
 
     const buildAttrPct = (map, canvasId) => {
-      dc(canvasId);
-      // Only show rows with at least one exit (vol or invol), sorted by vol attrition % desc
       const labels = Object.keys(map).filter(k => k !== 'Unknown' && map[k].active > 0 && (map[k].vol > 0 || map[k].invol > 0))
-        .sort((a,b) => {
-          const pctA = map[a].vol / (map[a].active + map[a].vol) * 100;
-          const pctB = map[b].vol / (map[b].active + map[b].vol) * 100;
-          return pctB - pctA;
-        });
-      if (!labels.length) return;
+        .sort((a,b) => (map[b].vol/(map[b].active+map[b].vol)||0) - (map[a].vol/(map[a].active+map[a].vol)||0));
+      if (!labels.length) {
+        const el = document.getElementById(canvasId);
+        if (el) el.parentElement.innerHTML = '<p style="font-size:12px;color:var(--ink-3);font-style:italic;padding:8px 0">No exits YTD</p>';
+        return;
+      }
       const volPct   = labels.map(l => { const r=map[l]; return r.active+r.vol > 0 ? parseFloat((r.vol/(r.active+r.vol)*100).toFixed(2)) : 0; });
       const involPct = labels.map(l => { const r=map[l]; return r.active+r.invol > 0 ? parseFloat((r.invol/(r.active+r.invol)*100).toFixed(2)) : 0; });
-      const h = Math.max(labels.length * 44 + 80, 180);
-      document.getElementById(canvasId).parentElement.style.height = h + 'px';
+      const h = Math.max(labels.length * 44 + 80, 160);
+      const el = document.getElementById(canvasId);
+      if (el) el.parentElement.style.height = h + 'px';
+      dc(canvasId);
       charts[canvasId] = new Chart(document.getElementById(canvasId), {
-        type: 'bar',
-        data: { labels, datasets: [
-          { label: 'Voluntary attrition %', data: volPct, backgroundColor: BLUE, borderRadius: 3 },
-          { label: 'Involuntary attrition %', data: involPct, backgroundColor: WARN, borderRadius: 3 },
+        type:'bar',
+        data:{labels, datasets:[
+          {label:'Voluntary attrition %', data:volPct, backgroundColor:BLUE, borderRadius:3},
+          {label:'Involuntary attrition %', data:involPct, backgroundColor:WARN, borderRadius:3},
         ]},
-        options: { ...baseChart, indexAxis: 'y',
-          plugins: { ...baseChart.plugins,
-            legend: { display: true, position: 'top', labels: { color: tickC, font: { size: 11 }, padding: 12, boxWidth: 10, boxHeight: 10 } },
-            tooltip: { backgroundColor:'#0f0e0c', titleColor:'#f9f6f0', bodyColor:'#c8c5bb',
-              callbacks: { label: ctx => {
-                const lbl = ctx.dataset.label;
-                const key = labels[ctx.dataIndex];
-                const r = map[key];
-                const exits = lbl.includes('Vol') ? r.vol : r.invol;
-                return ` ${lbl}: ${ctx.parsed.x.toFixed(2)}% (${exits} exits YTD / ${r.active} active)`;
-              }}
-            }
+        options:{...baseChart, indexAxis:'y',
+          plugins:{...baseChart.plugins,
+            legend:{display:true,position:'top',labels:{color:tickC,font:{size:11},padding:12,boxWidth:10,boxHeight:10}},
+            tooltip:{backgroundColor:'#0f0e0c',titleColor:'#f9f6f0',bodyColor:'#c8c5bb',callbacks:{
+              label:ctx=>{const lbl=ctx.dataset.label;const key=labels[ctx.dataIndex];const r=map[key];const exits=lbl.includes('Vol')?r.vol:r.invol;return ` ${lbl}: ${ctx.parsed.x.toFixed(2)}% (${exits} exits YTD / ${r.active} active)`;}
+            }}
           },
-          scales: {
-            x: { ...baseChart.scales.x, ticks: { ...baseChart.scales.x.ticks, callback: v => v + '%' }, max: Math.max(...volPct, ...involPct, 5) + 2 },
-            y: { ...baseChart.scales.y, ticks: { color: tickC, font: { size: 10 } } }
+          scales:{
+            x:{...baseChart.scales.x, ticks:{...baseChart.scales.x.ticks, callback:v=>v+'%'}, max:Math.max(...volPct,...involPct,5)+2},
+            y:{...baseChart.scales.y, ticks:{color:tickC,font:{size:10}}}
           }
         }
       });
     };
-
-    buildAttrPct(d.cc,   'opsAttrCCChart');
-    buildAttrPct(d.prod, 'opsAttrProdChart');
-    document.querySelectorAll('#opsAttrTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.seg === seg));
-  }
-
-  // Build tabs
-  const tabRow = document.getElementById('opsAttrTabs');
-  tabRow.innerHTML = '';
-  opsSegments.forEach((seg, i) => {
-    const btn = document.createElement('button');
-    btn.className = 'tab' + (i === 0 ? ' active' : '');
-    btn.textContent = seg;
-    btn.dataset.seg = seg;
-    btn.onclick = () => renderOpsAttrChart(seg);
-    tabRow.appendChild(btn);
+    buildAttrPct(d.cc,   ccId);
+    buildAttrPct(d.prod, prodId);
   });
-  if (opsSegments.length) renderOpsAttrChart(opsSegments[0]);
 
 
 
@@ -819,105 +818,101 @@ function switchTab(tab) {
 function exportReport() {
   const date = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
   const kpiHtml = document.getElementById('kpiStrip').innerHTML;
+  const bodyHtml = document.querySelector('.report-body').innerHTML;
+  const chartScript = getChartRebuildScript();
 
-  // Snapshot every canvas to a PNG image so no Chart.js needed in export
-  const reportBody = document.querySelector('.report-body').cloneNode(true);
+  // Fetch chart.min.js from same origin and inline it
+  const chartSrc = Array.from(document.scripts).find(s => s.src && s.src.includes('chart.min'));
+  const chartUrl = chartSrc ? chartSrc.src : null;
 
-  // Replace each canvas with an <img> of the same size
-  reportBody.querySelectorAll('canvas').forEach(canvas => {
-    const orig = document.getElementById(canvas.id);
-    if (!orig) return;
-    try {
-      const img = document.createElement('img');
-      img.src = orig.toDataURL('image/png');
-      img.style.width = '100%';
-      img.style.height = orig.style.height || orig.offsetHeight + 'px';
-      img.style.display = 'block';
-      canvas.parentNode.replaceChild(img, canvas);
-    } catch(e) {}
-  });
+  function doExport(chartjsCode) {
+    const esc = s => s.replace(/<\/script>/gi, '<\\/script>');
+    const html = '<!DOCTYPE html>\n<html lang="en">\n<head>\n' +
+      '<meta charset="UTF-8">\n' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
+      '<title>HC Analytics Report \u00b7 ' + date + '</title>\n' +
+      '<style>\n' +
+      ':root{--ink:#0f0e0c;--ink-2:#3a3830;--ink-3:#7a7870;--paper:#f9f6f0;--surface:#ffffff;--accent:#1a3a5c;--accent-2:#c84b2f;--border:rgba(15,14,12,0.10);--border-strong:rgba(15,14,12,0.18);--radius:4px;--radius-lg:8px}\n' +
+      '*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}\n' +
+      'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased}\n' +
+      '.report-header{background:linear-gradient(135deg,#0a2240 0%,#1565c0 55%,#1e88e5 100%);color:#fff;padding:2.5rem 3rem 2rem}\n' +
+      '.rh-top{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem}\n' +
+      '.rh-title{font-family:Georgia,serif;font-size:clamp(1.6rem,3.5vw,2.6rem);line-height:1.15}\n' +
+      '.rh-title em{font-style:italic;color:#90caf9}\n' +
+      '.kpi-strip{display:flex;flex-wrap:wrap;gap:0;border-top:1px solid rgba(255,255,255,.2);padding-top:1.5rem}\n' +
+      '.kpi{padding:0 2.5rem 0 0;min-width:140px}\n' +
+      '.kpi-label{font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}\n' +
+      '.kpi-value{font-size:2.2rem;font-weight:300;line-height:1}\n' +
+      '.report-body{max-width:1100px;margin:0 auto;padding:2.5rem 2rem 4rem}\n' +
+      '.ai-narrative{border-left:3px solid var(--accent-2);padding:1.25rem 1.5rem;margin-bottom:2.5rem;background:var(--surface);border-radius:0 var(--radius-lg) var(--radius-lg) 0}\n' +
+      '.ai-label{font-size:11px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-2);margin-bottom:8px}\n' +
+      '.ai-pulse{width:7px;height:7px;border-radius:50%;background:var(--accent-2)}\n' +
+      '.ai-text{font-size:15px;line-height:1.75;color:var(--ink-2)}\n' +
+      '.ai-text strong{color:var(--ink);font-weight:500}\n' +
+      '.section-head{display:flex;align-items:baseline;justify-content:space-between;margin:2rem 0 1rem;border-bottom:1px solid var(--border);padding-bottom:8px}\n' +
+      '.section-title{font-family:Georgia,serif;font-size:18px;color:var(--ink)}\n' +
+      '.section-note{font-size:12px;color:var(--ink-3)}\n' +
+      '.chart-grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:1.5rem;margin-bottom:1.5rem}\n' +
+      '.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem 1.5rem 1.5rem}\n' +
+      '.cc-title{font-size:14px;font-weight:500;color:var(--ink);margin-bottom:2px}\n' +
+      '.cc-sub{font-size:12px;color:var(--ink-3);margin-bottom:14px}\n' +
+      '.chart-wrap{position:relative;width:100%}\n' +
+      '.legend{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:10px}\n' +
+      '.legend-item{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-3)}\n' +
+      '.legend-swatch{width:10px;height:10px;border-radius:2px;flex-shrink:0}\n' +
+      '.tab-row{display:flex;gap:4px;margin-bottom:1.25rem;flex-wrap:wrap}\n' +
+      '.tab{font-size:13px;padding:6px 16px;border-radius:99px;border:1px solid var(--border-strong);background:transparent;color:var(--ink-3);cursor:pointer;font-family:inherit}\n' +
+      '.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}\n' +
+      '.hbar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}\n' +
+      '.hbar-label{font-size:13px;color:var(--ink-3);width:140px;flex-shrink:0;text-align:right}\n' +
+      '.hbar-track{flex:1;background:#eee;border-radius:3px;height:22px;overflow:hidden}\n' +
+      '.hbar-fill{height:100%;border-radius:3px;display:flex;align-items:center;padding-left:10px}\n' +
+      '.hbar-fill span{font-size:12px;font-weight:500;color:#fff}\n' +
+      '.hbar-pct{font-size:12px;color:var(--ink-3);width:110px;text-align:right;flex-shrink:0}\n' +
+      '.full-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem 1.5rem 1.75rem;margin-bottom:1.5rem}\n' +
+      '.data-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}\n' +
+      '.data-table th{text-align:left;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);padding:8px 10px;border-bottom:1px solid var(--border)}\n' +
+      '.data-table td{padding:9px 10px;border-bottom:1px solid var(--border);color:var(--ink-2)}\n' +
+      '.data-table tr:last-child td{border-bottom:none}\n' +
+      '.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;font-weight:500}\n' +
+      '.badge-neu{background:#ebebeb;color:#555}\n' +
+      '.report-footer{text-align:center;padding:2rem;font-size:12px;color:var(--ink-3);border-top:1px solid var(--border)}\n' +
+      '@media(max-width:640px){.report-header{padding:1.5rem}.report-body{padding:1.5rem 1rem 3rem}.chart-grid-2{grid-template-columns:1fr}}\n' +
+      '</style>\n</head>\n<body>\n' +
+      '<div class="report-header"><div class="rh-top"><div><div class="rh-title">Headcount &amp; <em>attrition</em></div></div><div style="font-size:13px;opacity:.7">' + date + '</div></div><div class="kpi-strip">' + kpiHtml + '</div></div>\n' +
+      '<div class="report-body">' + bodyHtml + '</div>\n' +
+      '<div class="report-footer">Generated ' + date + ' \u00b7 HC Analytics \u00b7 Regular &amp; PEO only \u00b7 excl. Packaging \u00b7 No data stored or transmitted.</div>\n' +
+      '<script>' + chartjsCode + '<' + '/script>\n' +
+      '<script>\n' +
+      'var BLUE="#1a3a5c",BLUE_MID="#2a5f8c",BLUE_LIGHT="#4a8ab5",BLUE_PALE="#85b7d9",SLATE="#3a4a5c",STEEL="#5a7a8c",MUTED="#8ca5b5",WARN="#c84b2f";\n' +
+      'var gridC="rgba(15,14,12,0.07)",tickC="#7a7870";\n' +
+      'function switchTab(t){["cc","ops","region"].forEach(function(k){var el=document.getElementById("tab-"+k);if(el)el.style.display=k===t?"":"none";});document.querySelectorAll(".tab-row .tab").forEach(function(el,i){el.classList.toggle("active",["cc","ops","region"][i]===t);});}\n' +
+      chartScript + '\n' +
+      '<' + '/script>\n' +
+      '</body>\n</html>';
 
-  // Remove export/new report buttons if any leaked in
-  reportBody.querySelectorAll('.rh-export,.rh-reset').forEach(el => el.remove());
+    const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'HC-Analytics-Report-' + date.replace(/\s/g,'-') + '.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 10000);
+  }
 
-  const sc = '<' + '/script>';
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HC Analytics Report · ${date}</title>
-<style>
-:root{--ink:#0f0e0c;--ink-2:#3a3830;--ink-3:#7a7870;--paper:#f9f6f0;--surface:#ffffff;--accent:#1a3a5c;--accent-2:#c84b2f;--border:rgba(15,14,12,0.10);--border-strong:rgba(15,14,12,0.18);--radius:4px;--radius-lg:8px}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased}
-.report-header{background:linear-gradient(135deg,#0a2240 0%,#1565c0 55%,#1e88e5 100%);color:#fff;padding:2.5rem 3rem 2rem}
-.rh-top{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem}
-.rh-title{font-family:Georgia,serif;font-size:clamp(1.6rem,3.5vw,2.6rem);line-height:1.15}
-.rh-title em{font-style:italic;color:#90caf9}
-.kpi-strip{display:flex;flex-wrap:wrap;gap:0;border-top:1px solid rgba(255,255,255,.2);padding-top:1.5rem}
-.kpi{padding:0 2.5rem 0 0;min-width:140px}
-.kpi-label{font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
-.kpi-value{font-size:2.2rem;font-weight:300;line-height:1}
-.report-body{max-width:1100px;margin:0 auto;padding:2.5rem 2rem 4rem}
-.ai-narrative{border-left:3px solid var(--accent-2);padding:1.25rem 1.5rem;margin-bottom:2.5rem;background:var(--surface);border-radius:0 var(--radius-lg) var(--radius-lg) 0}
-.ai-label{font-size:11px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-2);margin-bottom:8px;display:flex;align-items:center;gap:6px}
-.ai-pulse{width:7px;height:7px;border-radius:50%;background:var(--accent-2)}
-.ai-text{font-size:15px;line-height:1.75;color:var(--ink-2)}
-.ai-text strong{color:var(--ink);font-weight:500}
-.section-head{display:flex;align-items:baseline;justify-content:space-between;margin:2rem 0 1rem;border-bottom:1px solid var(--border);padding-bottom:8px}
-.section-title{font-family:Georgia,serif;font-size:18px;color:var(--ink)}
-.section-note{font-size:12px;color:var(--ink-3)}
-.chart-grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:1.5rem;margin-bottom:1.5rem}
-.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem 1.5rem 1.5rem}
-.cc-title{font-size:14px;font-weight:500;color:var(--ink);margin-bottom:2px}
-.cc-sub{font-size:12px;color:var(--ink-3);margin-bottom:14px}
-.chart-wrap{position:relative;width:100%}
-.legend{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:10px}
-.legend-item{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-3)}
-.legend-swatch{width:10px;height:10px;border-radius:2px;flex-shrink:0}
-.tab-row{display:flex;gap:4px;margin-bottom:1.25rem;flex-wrap:wrap}
-.tab{font-size:13px;padding:6px 16px;border-radius:99px;border:1px solid var(--border-strong);background:transparent;color:var(--ink-3)}
-.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-.full-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem 1.5rem 1.75rem;margin-bottom:1.5rem}
-.data-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
-.data-table th{text-align:left;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);padding:8px 10px;border-bottom:1px solid var(--border)}
-.data-table td{padding:9px 10px;border-bottom:1px solid var(--border);color:var(--ink-2)}
-.data-table tr:last-child td{border-bottom:none}
-.hbar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-.hbar-label{font-size:13px;color:var(--ink-3);width:140px;flex-shrink:0;text-align:right}
-.hbar-track{flex:1;background:#eee;border-radius:3px;height:22px;overflow:hidden}
-.hbar-fill{height:100%;border-radius:3px;display:flex;align-items:center;padding-left:10px}
-.hbar-fill span{font-size:12px;font-weight:500;color:#fff}
-.hbar-pct{font-size:12px;color:var(--ink-3);width:110px;text-align:right;flex-shrink:0}
-.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;font-weight:500}
-.badge-neu{background:#ebebeb;color:#555}
-.report-footer{text-align:center;padding:2rem;font-size:12px;color:var(--ink-3);border-top:1px solid var(--border)}
-@media(max-width:640px){.report-header{padding:1.5rem}.report-body{padding:1.5rem 1rem 3rem}.chart-grid-2{grid-template-columns:1fr}}
-</style>
-</head>
-<body>
-<div class="report-header">
-  <div class="rh-top">
-    <div><div class="rh-title">Headcount &amp; <em>attrition</em></div></div>
-    <div style="font-size:13px;opacity:.7">${date}</div>
-  </div>
-  <div class="kpi-strip">${kpiHtml}</div>
-</div>
-<div class="report-body">${reportBody.innerHTML}</div>
-<div class="report-footer">Generated ${date} · HC Analytics · Regular &amp; PEO only · excl. Packaging · No data stored or transmitted.</div>
-</body>
-</html>`;
-
-  const blob = new Blob([html], {type:'text/html'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `HC-Analytics-Report-${date.replace(/\s/g,'-')}.html`;
-  a.click();
-  setTimeout(()=>URL.revokeObjectURL(url), 5000);
+  if (chartUrl) {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', chartUrl, true);
+    xhr.onload = () => doExport(xhr.status === 200 ? xhr.responseText : '');
+    xhr.onerror = () => doExport('');
+    xhr.send();
+  } else {
+    doExport('');
+  }
 }
-  
+
 function getChartRebuildScript() {
   // Serialize current chart data so the exported HTML can rebuild them
   const lines = [];
@@ -947,27 +942,4 @@ function resetReport() {
   document.getElementById('upload-screen').style.display = 'flex';
   document.getElementById('fileInput').value = '';
   Object.values(charts).forEach(c=>c.destroy()); charts = {};
-  if (window._genderResizeObs) { window._genderResizeObs.disconnect(); window._genderResizeObs = null; }
-}
-
-function loadSampleData() {
-  const countries = ['India','India','India','United States','United States','United Kingdom','Germany','Singapore','Australia','UAE','France','Canada'];
-  const costCenters = ['Engineering','Operations','Finance','Human Resources','Sales','Legal & Compliance'];
-  const opsSegs = ['Core Platform','Customer Success','Risk & Control','Financial Planning','Revenue Growth','People Operations'];
-  const products = ['Product Alpha','Product Beta','Product Gamma','Product Delta','Product Epsilon'];
-  const genders = ['Male','Female','Female','Male','Non-binary'];
-  const now = new Date();
-  let tsv = 'Employee_ID\tGender\tCountry\tCompany\tOrg_Level_2\tOrg_Level_3\tOrg_Level_4\tOriginal_Hire_Date\tDate_of_Birth\tEmployment_Status\n';
-  for (let i = 1; i <= 600; i++) {
-    const hya = Math.random()*12;
-    const hd = new Date(now - hya*365.25*24*60*60*1000);
-    const ay = 22+Math.random()*38;
-    const dob = new Date(now - ay*365.25*24*60*60*1000);
-    const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    const status = Math.random() < 0.12 ? 'Terminated' : 'Active';
-    tsv += `EMP${String(i).padStart(4,'0')}\t${genders[i%genders.length]}\t${countries[i%countries.length]}\tAcme Corp\t${costCenters[i%costCenters.length]}\t${opsSegs[i%opsSegs.length]}\t${products[i%products.length]}\t${fmt(hd)}\t${fmt(dob)}\t${status}\n`;
-  }
-  document.getElementById('upload-screen').style.display = 'none';
-  document.getElementById('loading').style.display = 'flex';
-  setTimeout(() => renderReport(parseHC(tsv, 'sample-data.tsv')), 800);
-}
+  if (window._genderResizeObs) { window._genderResizeObs.disconnect(); window._genderResi
