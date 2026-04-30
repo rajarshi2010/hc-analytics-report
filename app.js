@@ -347,14 +347,13 @@ function renderReport(data) {
     options: { ...baseChart, indexAxis:'y', scales: { x:{...baseChart.scales.x}, y:{...baseChart.scales.y, ticks:{color:tickC, font:{size:11, family:"'Segoe UI'"}}} } }
   });
 
-  // ── Attrition — last 30 days, excl transfers, excl Packaging ──
+  // ── Attrition — YTD, excl transfers, excl Packaging ──
   const termedRows = data.allRows.filter(r => !r._isActive && r._org3 !== 'Packaging' && r._isEligible);
-  const cutoff30b = new Date();
-  cutoff30b.setDate(cutoff30b.getDate() - 30);
+  const ytdStart = new Date(new Date().getFullYear(), 0, 1);
   const termedLast12 = termedRows.filter(r => {
     if (!r._termDate) return false;
     const d = new Date(r._termDate);
-    return !isNaN(d) && d >= cutoff30 && (r._termType||'').toLowerCase() !== 'transfer';
+    return !isNaN(d) && d >= ytdStart && (r._termType||'').toLowerCase() !== 'transfer';
   });
   const volRows    = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'voluntary');
   const involRows  = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'involuntary');
