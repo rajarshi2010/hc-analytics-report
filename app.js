@@ -33,13 +33,19 @@ const c2r = c => {
 let charts = {};
 const dc = id => { if (charts[id]) { charts[id].destroy(); delete charts[id]; } };
 
-// Drag & drop
-const dz = document.getElementById('dropZone');
-const fi = document.getElementById('fileInput');
-dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
-dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
-dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag-over'); if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]); });
-fi.addEventListener('change', e => { if (e.target.files[0]) processFile(e.target.files[0]); });
+// Drag & drop — wrapped in DOMContentLoaded to ensure elements exist
+document.addEventListener('DOMContentLoaded', () => {
+  const dz = document.getElementById('dropZone');
+  const fi = document.getElementById('fileInput');
+  if (dz) {
+    dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+    dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag-over'); if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]); });
+  }
+  if (fi) {
+    fi.addEventListener('change', e => { if (e.target.files[0]) processFile(e.target.files[0]); });
+  }
+});
 
 function processFile(file) {
   document.getElementById('upload-screen').style.display = 'none';
