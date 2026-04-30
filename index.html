@@ -322,23 +322,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 
     <div class="section-head">
       <div class="section-title">Attrition by ops segment</div>
-      <div class="section-note">YTD exits ÷ active headcount · select segment · only shows cost centers/products with exits</div>
+      <div class="section-note">YTD exits ÷ active headcount · only shows cost centers/products with exits</div>
     </div>
-    <div class="full-card">
-      <div class="tab-row" id="opsAttrTabs"></div>
-      <div class="chart-grid-2">
-        <div class="chart-card">
-          <div class="cc-title" id="opsAttrCCTitle">By cost center</div>
-          <div class="cc-sub">Active HC vs vol/invol exits YTD</div>
-          <div class="chart-wrap" style="height:280px;"><canvas id="opsAttrCCChart" role="img" aria-label="Attrition by cost center for selected ops segment"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <div class="cc-title" id="opsAttrProdTitle">By product</div>
-          <div class="cc-sub">Active HC vs vol/invol exits YTD</div>
-          <div class="chart-wrap" style="height:280px;"><canvas id="opsAttrProdChart" role="img" aria-label="Attrition by product for selected ops segment"></canvas></div>
-        </div>
-      </div>
-    </div>
+    <div id="opsAttrContainer"></div>
 
     <div class="section-head">
       <div class="section-title">Tenure analysis</div>
