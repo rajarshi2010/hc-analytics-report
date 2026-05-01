@@ -485,7 +485,15 @@ function parseCSVLine(line, delim) {
 }
 
 function parseHC(text, filename) {
-  const lines = text.trim().split(/\r?\n/);
+  const rawLines = text.trim().split(/\r?\n/);
+const lines = [];
+let cur = '';
+for (const l of rawLines) {
+  cur = cur ? cur + ' ' + l : l;
+  const quotes = (cur.match(/"/g) || []).length;
+  if (quotes % 2 === 0) { lines.push(cur); cur = ''; }
+}
+if (cur) lines.push(cur);
   const delim = lines[0].includes('\t') ? '\t' : ',';
   const HEADER_KEYWORDS = ['employee','gender','country','company','status','hire','salary','email','org','cost','segment','product','birth'];
   let headerLineIdx = 0;
