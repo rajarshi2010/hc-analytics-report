@@ -600,7 +600,7 @@ function renderReport(data) {
   const inactiveCompanies = allCompanies.filter(c => !activeCompanies.has(c) && !last30Companies.has(c));
 console.log('ROWS COMPANIES:', [...new Set(rows.map(r=>r._company))].sort());
   document.getElementById('kpiStrip').innerHTML = [
-    { label: 'Active entities', value: new Set(rows.map(r=>r._company)).size },
+{ label: 'Active entities', value: new Set(rows.map(r=>r._company).filter(c=>c&&c!=='Unknown')).size },
     
     { label: 'Active headcount', value: total.toLocaleString() },
     { label: 'Voluntary attrition (YTD)', value: attrPct != null ? attrPct.toFixed(2) + '%' : '—' },
