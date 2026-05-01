@@ -807,7 +807,7 @@ console.log('ROWS COMPANIES:', [...new Set(rows.map(r=>r._company))].sort());
   const totalTermed = volCount + involCount;
 
   document.getElementById('attrNote').textContent = `${totalTermed} exits (YTD Jan–${new Date().toLocaleString('default',{month:'short'})}) · ${volCount} voluntary · ${involCount} involuntary`;
-
+document.getElementById('kpiStrip').innerHTML += '<div class="kpi"><div class="kpi-label">Voluntary exits (YTD)</div><div class="kpi-value">' + volCount + '</div></div><div class="kpi"><div class="kpi-label">Involuntary exits (YTD)</div><div class="kpi-value">' + involCount + '</div></div>';
   // ── AI narrative — called here so all attrition vars are in scope ──
   buildNarrative(rows, total, attrPct, volCount, involCount, termedLast12, termedRows, data.allRows);
 
