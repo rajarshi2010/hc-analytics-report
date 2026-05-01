@@ -227,6 +227,7 @@ function renderReport(data) {
   const activeCompanies = new Set(allActiveRows.map(r=>r._company));
   const inactiveCompanies = allCompanies.filter(c => !activeCompanies.has(c) && !last30Companies.has(c));
   document.getElementById('kpiStrip').innerHTML = [
+    { label: 'Active entities', value: new Set(rows.map(r=>r._company)).size },
     { label: 'Active headcount', value: total.toLocaleString() },
     { label: 'Voluntary attrition (YTD)', value: attrPct != null ? attrPct.toFixed(2) + '%' : '—' },
     { label: 'Voluntary exits (YTD)', value: volCount },
