@@ -178,7 +178,7 @@ function processRows(rows, headers, filename) {
     if (rd) { const d = new Date(rd); if (!isNaN(d)) r._tenureYears = (today - d) / (1000*60*60*24*365.25); }
   });
 
-  const activeRows = rows.filter(r => r._isActive && r._org3 !== 'Packaging');
+  const activeRows = rows.filter(r => r._isActive && r._org3 !== 'Packaging' && r._isEligible);
   const excludedCount = rows.length - activeRows.length;
   // Tag _company on allRows too so KPI company count works across all entities
   return { rows: activeRows, allRows: rows, excludedCount, filename, colOrg3, colOrg4, colCompany, colStatus, colTermType, colTermReason, colTermDate };
@@ -223,7 +223,7 @@ function renderReport(data) {
   const last30Companies = new Set(last30Rows.map(r => r._company));
   const allCompanies = Object.keys(countBy(data.allRows,'_company'));
   // Use full active rows (not Packaging-filtered) for company presence check
-  const allActiveRows = data.allRows.filter(r => r._isActive && r._isEligible && r._org3 !== 'Packaging');
+  const allActiveRows = rows; // already filtered: active + Regular/PEO + excl Packaging
   const activeCompanies = new Set(allActiveRows.map(r=>r._company));
   const inactiveCompanies = allCompanies.filter(c => !activeCompanies.has(c) && !last30Companies.has(c));
   document.getElementById('kpiStrip').innerHTML = [
