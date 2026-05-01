@@ -614,8 +614,7 @@ console.log('ROWS COMPANIES:', [...new Set(rows.map(r=>r._company))].sort());
    { label: 'Voluntary attrition (YTD)', value: attrPct != null ? attrPct.toFixed(2) + '%' : '—' },
     { label: 'Voluntary exits (YTD)', value: volCount },
     { label: 'Involuntary exits (YTD)', value: involCount },
-  ].map(k => ... `<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.value}</div></div>`).join('');
-
+  ].map(k => `<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.value}</div></div>`).join('');
   // narrative called after attrition data is built below
 
   // ── Gender donut — same style as Vol/Invol chart ──
