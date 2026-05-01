@@ -611,8 +611,10 @@ console.log('ROWS COMPANIES:', [...new Set(rows.map(r=>r._company))].sort());
 { label: 'Active entities', value: new Set(rows.map(r=>r._company).filter(c=>c&&c!=='Unknown')).size },
     
     { label: 'Active headcount', value: total.toLocaleString() },
-    { label: 'Voluntary attrition (YTD)', value: attrPct != null ? attrPct.toFixed(2) + '%' : '—' },
-  ].map(k => `<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.value}</div></div>`).join('');
+   { label: 'Voluntary attrition (YTD)', value: attrPct != null ? attrPct.toFixed(2) + '%' : '—' },
+    { label: 'Voluntary exits (YTD)', value: volCount },
+    { label: 'Involuntary exits (YTD)', value: involCount },
+  ].map(k => ... `<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-value">${k.value}</div></div>`).join('');
 
   // narrative called after attrition data is built below
 
