@@ -223,7 +223,7 @@ function renderReport(data) {
   const last30Companies = new Set(last30Rows.map(r => r._company));
   const allCompanies = Object.keys(countBy(data.allRows,'_company'));
   // Use full active rows (not Packaging-filtered) for company presence check
-  const allActiveRows = data.allRows.filter(r => r._isActive);
+  const allActiveRows = data.allRows.filter(r => r._isActive && r._isEligible && r._org3 !== 'Packaging');
   const activeCompanies = new Set(allActiveRows.map(r=>r._company));
   const inactiveCompanies = allCompanies.filter(c => !activeCompanies.has(c) && !last30Companies.has(c));
   document.getElementById('kpiStrip').innerHTML = [
@@ -378,17 +378,18 @@ function renderReport(data) {
     }}
   });
   const ccMap = countBy(rows,'_org2');
-  const ccEntries = sorted(ccMap).slice(0,15);
+  const ccEntries = sorted(ccMap).filter(e=>e[0]!=='Unknown');
+  const ccChartEntries = ccEntries.slice(0,15);
   dc('costCenterChart');
   charts['costCenterChart'] = new Chart(document.getElementById('costCenterChart'), {
     type: 'bar',
-    data: { labels: ccEntries.map(e=>e[0]), datasets: [{ label:'Headcount', data: ccEntries.map(e=>e[1]), backgroundColor: BLUE, borderRadius:3 }] },
+    data: { labels: ccChartEntries.map(e=>e[0]), datasets: [{ label:'Headcount', data: ccChartEntries.map(e=>e[1]), backgroundColor: BLUE, borderRadius:3 }] },
     options: { ...baseChart, indexAxis:'y', scales: { x:{...baseChart.scales.x}, y:{...baseChart.scales.y, ticks:{color:tickC, font:{size:11, family:"'Segoe UI'"}}} } }
   });
 
   // ── Ops Segment chart (Org Level 3) ──
   const opsMap = countBy(rows,'_org3');
-  const opsEntries = sorted(opsMap).filter(e=>e[0]!=='Unknown').slice(0,15);
+  const opsEntries = sorted(opsMap).filter(e=>e[0]!=='Unknown');
   dc('opsSegChart');
   if (opsEntries.length) {
     charts['opsSegChart'] = new Chart(document.getElementById('opsSegChart'), {
@@ -655,7 +656,7 @@ function renderReport(data) {
 
   // ── Cost Center table (with vol/invol/transfer) ──
   const avgTCC = avgBy(rows,'_org2','_tenureYears');
-  document.getElementById('ccTableBody').innerHTML = ccEntries.map(([cc, count]) => {
+  document.getElementById('ccTableBody').innerHTML = ccEntries.filter(([cc])=>cc!=='Unknown').map(([cc, count]) => {
     const pct = Math.round(count/total*100);
     const tenure = avgTCC[cc] ? avgTCC[cc].toFixed(1) : '—';
     const fPct = Math.round(rows.filter(r=>r._org2===cc && r._gender && r._gender.toLowerCase().startsWith('f')).length / count * 100);
@@ -667,7 +668,7 @@ function renderReport(data) {
   // ── Ops Segment table ──
   const avgTOps = avgBy(rows,'_org3','_tenureYears');
   document.getElementById('opsTableBody').innerHTML = opsEntries.length
-    ? opsEntries.map(([seg, count]) => {
+    ? opsEntries.filter(([seg])=>seg!=='Unknown').map(([seg, count]) => {
         const pct = Math.round(count/total*100);
         const tenure = avgTOps[seg] ? avgTOps[seg].toFixed(1) : '—';
         return `<tr><td>${seg}</td><td>${count.toLocaleString()}</td><td><span class="badge badge-neu">${pct}%</span></td><td>${tenure}</td></tr>`;
