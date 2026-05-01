@@ -1,4 +1,4 @@
-
+// v2
 const BLUE = '#1a3a5c';
 const BLUE_MID = '#2a5f8c';
 const BLUE_LIGHT = '#4a8ab5';
