@@ -1,4 +1,4 @@
-// v2
+
 const BLUE = '#1a3a5c';
 const BLUE_MID = '#2a5f8c';
 const BLUE_LIGHT = '#4a8ab5';
@@ -221,7 +221,7 @@ function renderReport(data) {
     return !isNaN(d) && d >= ytdStartCo && (r._termType||'').toLowerCase() !== 'transfer';
   });
   const last30Companies = new Set(last30Rows.map(r => r._company));
-  const allCompanies = Object.keys(countBy(data.allRows,'_company'));
+  const allCompanies = Object.keys(countBy(data.allRows.filter(r => r._isEligible && r._org3 !== 'Packaging'),'_company'));
   // Use full active rows (not Packaging-filtered) for company presence check
   const allActiveRows = rows; // already filtered: active + Regular/PEO + excl Packaging
   const activeCompanies = new Set(allActiveRows.map(r=>r._company));
