@@ -593,13 +593,13 @@ function renderReport(data) {
     return !isNaN(d) && d >= ytdStartCo && (r._termType||'').toLowerCase() !== 'transfer';
   });
   const last30Companies = new Set(last30Rows.map(r => r._company));
-  const allCompanies = Object.keys(countBy(data.allRows,'_company'));
+  const allCompanies = Object.keys(countBy(data.allRows.filter(r=>r._isEligible&&r._org3!=='Packaging'),'_company'));
   // Use full active rows (not Packaging-filtered) for company presence check
   const allActiveRows = rows; // already filtered: active + Regular/PEO + excl Packaging
   const activeCompanies = new Set(allActiveRows.map(r=>r._company));
   const inactiveCompanies = allCompanies.filter(c => !activeCompanies.has(c) && !last30Companies.has(c));
   document.getElementById('kpiStrip').innerHTML = [
-    { label: 'Active entities', value: activeCompanies.size },
+    { label: 'Active entities', value: new Set(rows.map(r=>r._company)).size },
     
     { label: 'Active headcount', value: total.toLocaleString() },
     { label: 'Voluntary attrition (YTD)', value: attrPct != null ? attrPct.toFixed(2) + '%' : '—' },
