@@ -794,7 +794,7 @@ console.log('ROWS COMPANIES:', [...new Set(rows.map(r=>r._company))].sort());
 
   // ── Attrition — YTD, excl transfers, excl Packaging ──
   const termedRows = data.allRows.filter(r => !r._isActive && r._org3 !== 'Packaging' && r._isEligible);
-  const ytdStart = new Date(new Date().getFullYear(), 0, 1);
+  const ytdStart = new Date(new Date().getFullYear(), 0, 1, 0, 0, 0, 0);
   const termedLast12 = termedRows.filter(r => {
     if (!r._termDate) return false;
     const d = new Date(r._termDate);
