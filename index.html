@@ -597,7 +597,7 @@ function renderReport(data) {
   const ytdStartCo = new Date(new Date().getFullYear(), 0, 1, 0, 0, 0, 0);
   const last30Rows = data.allRows.filter(r => {
     if (r._isActive) return false;
-    const d = new Date(r._termDate + 'T00:00:00');
+    const d = new Date(r._termDate);
     return !isNaN(d) && d >= ytdStartCo && (r._termType||'').toLowerCase() !== 'transfer';
   });
   const last30Companies = new Set(last30Rows.map(r => r._company));
@@ -797,7 +797,7 @@ console.log('ROWS COMPANIES:', [...new Set(rows.map(r=>r._company))].sort());
   const ytdStart = new Date(new Date().getFullYear(), 0, 1, 0, 0, 0, 0);
   const termedLast12 = termedRows.filter(r => {
     if (!r._termDate) return false;
-    const d = new Date(r._termDate + 'T00:00:00');
+    const d = new Date(r._termDate);
     const dd=new Date(d.getFullYear(),d.getMonth(),d.getDate()); return !isNaN(d) && dd >= ytdStart && (r._termType||'').toLowerCase() !== 'transfer';
   });
   const volRows    = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'voluntary');
@@ -870,7 +870,7 @@ document.getElementById('kpiStrip').innerHTML += '<div class="kpi"><div class="k
   const momMap = {};
   termedRows.filter(r => (r._termType||'').toLowerCase() !== 'transfer').forEach(r => {
     if (!r._termDate) return;
-    const d = new Date(r._termDate + 'T00:00:00');
+    const d = new Date(r._termDate);
     if (isNaN(d)) return;
     const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
     if (!momMap[ym]) momMap[ym] = { Voluntary:0, Involuntary:0 };
