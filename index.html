@@ -450,7 +450,7 @@ function processFile(file) {
           if (val instanceof Date) {
             row[h] = val.getFullYear()+'-'+String(val.getMonth()+1).padStart(2,'0')+'-'+String(val.getDate()).padStart(2,'0');
           } else {
-            row[h] = String(val == null ? '' : val).trim();
+            row[h] = String(val == null ? '' : val).trim().replace(/^"|"$/g,'');
           }
         });
         rows.push(row);
