@@ -594,7 +594,7 @@ function renderReport(data) {
 
   const termedNote = colStatus && excludedCount > 0 ? `${excludedCount.toLocaleString()} non-active excluded` : '';
   document.getElementById('trendNote').textContent = `${total.toLocaleString()} employees`;
-  const ytdStartCo = new Date(new Date().getFullYear(), 0, 1);
+  const ytdStartCo = new Date(new Date().getFullYear(), 0, 1, 0, 0, 0, 0);
   const last30Rows = data.allRows.filter(r => {
     if (r._isActive) return false;
     const d = new Date(r._termDate);
@@ -798,7 +798,7 @@ console.log('ROWS COMPANIES:', [...new Set(rows.map(r=>r._company))].sort());
   const termedLast12 = termedRows.filter(r => {
     if (!r._termDate) return false;
     const d = new Date(r._termDate);
-    return !isNaN(d) && d >= ytdStart && (r._termType||'').toLowerCase() !== 'transfer';
+    const dd=new Date(d.getFullYear(),d.getMonth(),d.getDate()); return !isNaN(d) && dd >= ytdStart && (r._termType||'').toLowerCase() !== 'transfer';
   });
   const volRows    = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'voluntary');
   const involRows  = termedLast12.filter(r => (r._termType||'').toLowerCase() === 'involuntary');
@@ -874,8 +874,8 @@ document.getElementById('kpiStrip').innerHTML += '<div class="kpi"><div class="k
     if (isNaN(d)) return;
     const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
     if (!momMap[ym]) momMap[ym] = { Voluntary:0, Involuntary:0 };
-    const t = r._termType || 'Unknown';
-    if (momMap[ym][t] !== undefined) momMap[ym][t]++;
+    const tRaw=(r._termType||'').toLowerCase(); const t=tRaw==='voluntary'?'Voluntary':tRaw==='involuntary'?'Involuntary':null;
+    if(t) momMap[ym][t]++;
   });
   const momMonths = Object.keys(momMap).sort().slice(-24);
   const fmtM = m => { const [y,mo]=m.split('-'); return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo-1]} ${y.slice(2)}`; };
