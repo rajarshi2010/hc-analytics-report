@@ -448,7 +448,7 @@ function processFile(file) {
           const val = aoa[i][j];
           // Format dates from SheetJS as YYYY-MM-DD
           if (val instanceof Date) {
-            row[h] = val.toISOString().slice(0,10);
+            row[h] = val.getFullYear()+'-'+String(val.getMonth()+1).padStart(2,'0')+'-'+String(val.getDate()).padStart(2,'0');
           } else {
             row[h] = String(val == null ? '' : val).trim();
           }
